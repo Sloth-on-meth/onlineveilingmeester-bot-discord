@@ -39,36 +39,56 @@ async def on_message(message):
                         return
                     data = await resp.json()
 
-            # Data extractie
-            title = data['kavelData']['naam']
-
+            # === Data extractie ===
+            kavel = data.get('kavelData', {})
+            title = kavel.get('naam', 'Onbekende titel')
             description = strip_html(
-                data['kavelData'].get('specificaties') or
-                data['kavelData'].get('bijzonderheden') or
-                data['kavelData'].get('product') or
+                kavel.get('specificaties') or
+                kavel.get('bijzonderheden') or
+                kavel.get('product') or
                 "Geen beschrijving beschikbaar."
             )
 
-            price = f"€ {data['hoogsteBod']},-"
-            start_price = f"€ {data['openingsBod']},-"
-            bid_count = data['aantalBiedingen']
+            price = f"€ {data.get('hoogsteBod', '??')},-"
+            start_price = f"€ {data.get('openingsBod', '??')},-"
+            bid_count = data.get('aantalBiedingen', '?')
             image_paths = data.get("imageList", [])
             image_urls = [f"https://www.onlineveilingmeester.nl/images/800x600/{path}" for path in image_paths]
 
-            # Sluitingstijd
+            # === Sluitingstijd ===
             sluit_iso = data.get("sluitingsDatumISO")
             sluit_dt = datetime.fromisoformat(sluit_iso.replace("Z", "+00:00"))
             now = datetime.now(timezone.utc)
             delta = sluit_dt - now
 
-            if delta.total_seconds() <= 0:
-                sluiting_over = "Gesloten"
-            else:
-                sluiting_over = f"over {humanize.naturaldelta(delta, minimum_unit='seconds')}"
-
+            sluiting_over = "Gesloten" if delta.total_seconds() <= 0 else f"over {humanize.naturaldelta(delta, minimum_unit='seconds')}"
             sluiting_exact = sluit_dt.strftime("%d/%m/%Y %H:%M")
 
-            # Embed bouwen
+            # === Extra info ===
+            categorie = data.get('categorie', {}).get('naam', 'Onbekend')
+            conditie = kavel.get('conditie', 'Onbekend')
+            verzendbaar = "Ja" if data.get('isShippable', False) else "Nee"
+            bouwjaar = kavel.get('bouwjaar', 'Onbekend')
+            merk = kavel.get('merk', 'Onbekend')
+
+            extra_info = (
+                f"📦 **Categorie:** {categorie}\n"
+                f"🏷️ **Conditie:** {conditie}\n"
+                f"🚚 **Verzendbaar:** {verzendbaar}\n"
+                f"🛠️ **Bouwjaar:** {bouwjaar}\n"
+                f"🔧 **Merk:** {merk}"
+            )
+
+            # === Laatste bieders ===
+            biedingen = data.get('biedingen', [])
+            top_bieders = []
+            for b in biedingen[:3]:
+                naam = b.get('bieder', '???')
+                bedrag = f"€ {b.get('bedrag', '?')},-"
+                top_bieders.append(f"**{naam}**: {bedrag}")
+            bieders_text = "\n".join(top_bieders) if top_bieders else "Geen biedingen gevonden."
+
+            # === Embed opbouw ===
             embed = discord.Embed(
                 title=title,
                 description=description[:2048],
@@ -83,9 +103,12 @@ async def on_message(message):
                 f"⏳ **Sluit over:** {sluiting_over}\n"
                 f"📅 **Sluit op:** {sluiting_exact}"
             )
-            embed.add_field(name="Details", value=details_text, inline=False)
 
-            # Collage maken
+            embed.add_field(name="Details", value=details_text, inline=False)
+            embed.add_field(name="Extra info", value=extra_info, inline=False)
+            embed.add_field(name="Laatste biedingen", value=bieders_text, inline=False)
+
+            # === Collage ===
             if image_urls:
                 grid_img = await compose_image_grid(image_urls)
                 if grid_img:
