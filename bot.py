@@ -26,7 +26,10 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    match = re.search(r'onlineveilingmeester\.nl/nl/veilingen/(\d+)/kavels/(\d+)', message.content)
+    match = re.search(
+        r'onlineveilingmeester\.nl/(?:nl/veilingen|en/auctions)/(\d+)/(?:kavels|lots)/(\d+)',
+        message.content
+    )
     if match:
         veiling_id = match.group(1)
         volgnummer = match.group(2)
