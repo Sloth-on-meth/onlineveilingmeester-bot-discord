@@ -33,7 +33,8 @@ async def on_ready():
 async def on_message(message):
     if message.author.bot:
         return
-
+    if "skibidi" in message.content:
+        await message.reply('toilet')
     start = datetime.now()
 #    await message.add_reaction("⏳")
     log(f"Bericht ontvangen: {message.content}")
