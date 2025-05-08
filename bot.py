@@ -13,6 +13,13 @@ from bs4 import BeautifulSoup
 with open("token.secret", "r") as f:
     TOKEN = f.read().strip()
 
+LOGFILE = "veilingmeester_log.txt"
+
+def log(text):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(LOGFILE, "a", encoding="utf-8") as f:
+        f.write(f"[{timestamp}] {text}\n")
+
 # === Bot Setup ===
 intents = discord.Intents.default()
 intents.message_content = True
@@ -20,44 +27,54 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f"Bot ingelogd als {bot.user}")
+    log(f"Bot ingelogd als {bot.user}")
 
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
 
-    content = message.content
+    start_time = datetime.now()
+    try:
+        await message.add_reaction("⏳")
+        log(f"Bericht ontvangen: {message.content}")
 
-    # === Onlineveilingmeester ===
-    ovm_match = re.search(
-        r'onlineveilingmeester\.nl/(?:nl/veilingen|en/auctions)/(\d+)/(?:kavels|lots)/(\d+)',
-        content
-    )
-    if ovm_match:
-        await handle_ovm(message, ovm_match.group(1), ovm_match.group(2))
-        await message.add_reaction("✅")
-        return
+        content = message.content
 
-    # === DomeinenRZ ===
-    drz_match = re.search(
-        r'verkoop\.domeinenrz\.nl/[^ ]*?meerfotos=(K\d+)',
-        content
-    )
-    if drz_match:
-        await handle_drz(message, drz_match.group(1))
-        await message.add_reaction("✅")
-        return
+        ovm_match = re.search(
+            r'onlineveilingmeester\.nl/(?:nl/veilingen|en/auctions)/(\d+)/(?:kavels|lots)/(\d+)',
+            content
+        )
+        if ovm_match:
+            await handle_ovm(message, ovm_match.group(1), ovm_match.group(2), start_time)
+            return
 
-    await bot.process_commands(message)
+        drz_match = re.search(
+            r'verkoop\.domeinenrz\.nl/[^ ]*?meerfotos=(K\d+)',
+            content
+        )
+        if drz_match:
+            await handle_drz(message, drz_match.group(1), start_time)
+            return
 
-async def handle_ovm(message, veiling_id, volgnummer):
+        await bot.process_commands(message)
+
+    except Exception as e:
+        log(f"❌ Onverwerkte fout in on_message: {e}")
+        await message.clear_reaction("⏳")
+        await message.add_reaction("❌")
+        await message.reply("⚠️ Er ging iets mis bij het verwerken van je bericht.")
+
+async def handle_ovm(message, veiling_id, volgnummer, start_time):
     api_url = f"https://www.onlineveilingmeester.nl/rest/nl/v2/veilingen/{veiling_id}/kavels/{volgnummer}"
+    log(f"Verzoek naar OVM API: {api_url}")
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(api_url) as resp:
                 if resp.status != 200:
                     await message.reply("API request faalde.")
+                    await message.clear_reaction("⏳")
+                    await message.add_reaction("❌")
                     return
                 data = await resp.json()
 
@@ -124,27 +141,39 @@ async def handle_ovm(message, veiling_id, volgnummer):
         embed.add_field(name="Extra info", value=extra_info, inline=False)
         embed.add_field(name="Laatste biedingen", value=bieders_text, inline=False)
 
+        duration = (datetime.now() - start_time).total_seconds()
+        embed.add_field(name="⏱️ Verwerkingstijd", value=f"{duration:.2f} seconden", inline=False)
+
         if image_urls:
             grid_img = await compose_image_grid(image_urls)
             if grid_img:
                 file = discord.File(grid_img, filename="fotos.png")
                 embed.set_image(url="attachment://fotos.png")
                 await message.reply(embed=embed, file=file)
+                await message.clear_reaction("⏳")
+                await message.add_reaction("✅")
                 return
 
         await message.reply(embed=embed)
+        await message.clear_reaction("⏳")
+        await message.add_reaction("✅")
 
     except Exception as e:
-        print("Fout:", e)
-        await message.reply("Fout bij ophalen van veilingdetails.")
+        log(f"❌ Fout OVM: {e}")
+        await message.clear_reaction("⏳")
+        await message.add_reaction("❌")
+        await message.reply("⚠️ Kon OVM-details niet ophalen.")
 
-async def handle_drz(message, kavelnummer):
+async def handle_drz(message, kavelnummer, start_time):
     url = f"https://verkoop.domeinenrz.nl/verkoop_bij_inschrijving_2025-0009?meerfotos={kavelnummer}"
+    log(f"Verzoek naar DRZ-pagina: {url}")
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
                 if resp.status != 200:
                     await message.reply("DRZ-pagina niet gevonden.")
+                    await message.clear_reaction("⏳")
+                    await message.add_reaction("❌")
                     return
                 html = await resp.text(encoding="windows-1252")
 
@@ -152,6 +181,8 @@ async def handle_drz(message, kavelnummer):
         block = soup.find("div", class_="catalogusdetailitem")
         if not block:
             await message.reply("Kon DRZ-detail niet vinden.")
+            await message.clear_reaction("⏳")
+            await message.add_reaction("❌")
             return
 
         title = block.select_one("h4.title").get_text(strip=True) if block.select_one("h4.title") else "Geen titel"
@@ -171,19 +202,28 @@ async def handle_drz(message, kavelnummer):
             url=url
         )
 
+        duration = (datetime.now() - start_time).total_seconds()
+        embed.add_field(name="⏱️ Verwerkingstijd", value=f"{duration:.2f} seconden", inline=False)
+
         if image_urls:
             grid_img = await compose_image_grid(image_urls)
             if grid_img:
                 file = discord.File(grid_img, filename="fotos.png")
                 embed.set_image(url="attachment://fotos.png")
                 await message.reply(embed=embed, file=file)
+                await message.clear_reaction("⏳")
+                await message.add_reaction("✅")
                 return
 
         await message.reply(embed=embed)
+        await message.clear_reaction("⏳")
+        await message.add_reaction("✅")
 
     except Exception as e:
-        print("Fout DRZ:", e)
-        await message.reply("Fout bij ophalen van DRZ-pagina.")
+        log(f"❌ Fout DRZ: {e}")
+        await message.clear_reaction("⏳")
+        await message.add_reaction("❌")
+        await message.reply("⚠️ Kon DRZ-pagina niet ophalen.")
 
 def strip_html(html):
     if not html:
@@ -205,7 +245,7 @@ async def compose_image_grid(image_urls, grid_cols=None):
                     img = Image.open(BytesIO(data)).convert("RGB")
                     return img
         except Exception as e:
-            print(f"Fout bij afbeelding {url}: {e}")
+            log(f"Fout bij afbeelding {url}: {e}")
         return None
 
     async with aiohttp.ClientSession() as session:
