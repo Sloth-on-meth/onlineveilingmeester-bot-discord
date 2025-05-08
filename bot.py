@@ -38,7 +38,7 @@ async def on_message(message):
             async with aiohttp.ClientSession() as session:
                 async with session.get(api_url) as resp:
                     if resp.status != 200:
-                        await message.channel.send("API request faalde.")
+                        await message.reply("API request faalde.")
                         return
                     data = await resp.json()
 
@@ -117,14 +117,14 @@ async def on_message(message):
                 if grid_img:
                     file = discord.File(grid_img, filename="fotos.png")
                     embed.set_image(url="attachment://fotos.png")
-                    await message.channel.send(embed=embed, file=file)
+                    await message.reply(embed=embed, file=file)
                     return
 
-            await message.channel.send(embed=embed)
+            await message.reply(embed=embed)
 
         except Exception as e:
             print("Fout:", e)
-            await message.channel.send("Fout bij ophalen van veilingdetails.")
+            await message.reply("Fout bij ophalen van veilingdetails.")
 
     await bot.process_commands(message)
 
