@@ -9,267 +9,208 @@ from datetime import datetime, timezone
 import humanize
 from bs4 import BeautifulSoup
 
-# === Config ===
+# Load bot token from a secret file
 with open("token.secret", "r") as f:
     TOKEN = f.read().strip()
 
+# Log file path
 LOGFILE = "veilingmeester_log.txt"
 
-def log(text):
+def log(message: str):
+    """Append a timestamped log entry to the log file."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(LOGFILE, "a", encoding="utf-8") as f:
-        f.write(f"[{timestamp}] {text}\n")
+        f.write(f"[{timestamp}] {message}\n")
 
-# === Bot Setup ===
+# Initialize Discord bot with appropriate intents
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    log(f"Bot ingelogd als {bot.user}")
+    log(f"Logged in as {bot.user}")
 
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
 
-    start_time = datetime.now()
+    start = datetime.now()
+    await message.add_reaction("⏳")
+    log(f"Received message: {message.content}")
+
     try:
-        await message.add_reaction("⏳")
-        log(f"Bericht ontvangen: {message.content}")
-
-        content = message.content
-
-        ovm_match = re.search(
-            r'onlineveilingmeester\.nl/(?:nl/veilingen|en/auctions)/(\d+)/(?:kavels|lots)/(\d+)',
-            content
-        )
-        if ovm_match:
-            await handle_ovm(message, ovm_match.group(1), ovm_match.group(2), start_time)
-            return
-
-        drz_match = re.search(
-            r'verkoop\.domeinenrz\.nl/[^ ]*?meerfotos=(K\d+)',
-            content
-        )
-        if drz_match:
-            await handle_drz(message, drz_match.group(1), start_time)
-            return
-
-        await bot.process_commands(message)
+        # Match OnlineVeilingmeester URL
+        if match := re.search(r'onlineveilingmeester\.nl/(?:nl/veilingen|en/auctions)/(\d+)/(?:kavels|lots)/(\d+)', message.content):
+            await handle_ovm(message, match.group(1), match.group(2), start)
+        # Match DomeinenRZ URL
+        elif match := re.search(r'verkoop\.domeinenrz\.nl/[^ ]*?meerfotos=(K\d+)', message.content):
+            await handle_drz(message, match.group(1), start)
+        else:
+            await bot.process_commands(message)
 
     except Exception as e:
-        log(f"❌ Onverwerkte fout in on_message: {e}")
+        log(f"❌ Unhandled error: {e}")
         await message.clear_reaction("⏳")
         await message.add_reaction("❌")
-        await message.reply("⚠️ Er ging iets mis bij het verwerken van je bericht.")
+        await message.reply("⚠️ Something went wrong while processing your message.")
 
-async def handle_ovm(message, veiling_id, volgnummer, start_time):
-    api_url = f"https://www.onlineveilingmeester.nl/rest/nl/v2/veilingen/{veiling_id}/kavels/{volgnummer}"
-    log(f"Verzoek naar OVM API: {api_url}")
+async def handle_ovm(message, auction_id, lot_id, start):
+    url = f"https://www.onlineveilingmeester.nl/rest/nl/v2/veilingen/{auction_id}/kavels/{lot_id}"
+    log(f"Fetching OVM data from {url}")
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            if resp.status != 200:
+                await message.reply("❌ Failed to retrieve OVM data.")
+                await message.clear_reaction("⏳")
+                await message.add_reaction("❌")
+                return
+            data = await resp.json()
+
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(api_url) as resp:
-                if resp.status != 200:
-                    await message.reply("API request faalde.")
-                    await message.clear_reaction("⏳")
-                    await message.add_reaction("❌")
-                    return
-                data = await resp.json()
+        item = data.get("kavelData", {})
+        title = item.get("naam", "(No title)")
+        description = strip_html(item.get("specificaties") or item.get("bijzonderheden") or item.get("product") or "No description.")
 
-        kavel = data.get('kavelData', {})
-        title = kavel.get('naam', 'Onbekende titel')
-        description = strip_html(
-            kavel.get('specificaties') or
-            kavel.get('bijzonderheden') or
-            kavel.get('product') or
-            "Geen beschrijving beschikbaar."
-        )
-
-        price = f"€ {data.get('hoogsteBod', '??')},-"
-        start_price = f"€ {data.get('openingsBod', '??')},-"
-        bid_count = data.get('aantalBiedingen', '?')
-        image_paths = data.get("imageList", [])
-        image_urls = [f"https://www.onlineveilingmeester.nl/images/800x600/{path}" for path in image_paths]
-
-        sluit_iso = data.get("sluitingsDatumISO")
-        sluit_dt = datetime.fromisoformat(sluit_iso.replace("Z", "+00:00"))
+        image_urls = [f"https://www.onlineveilingmeester.nl/images/800x600/{path}" for path in data.get("imageList", [])]
+        sluiting = datetime.fromisoformat(data["sluitingsDatumISO"].replace("Z", "+00:00"))
         now = datetime.now(timezone.utc)
-        delta = sluit_dt - now
-        sluiting_over = "Gesloten" if delta.total_seconds() <= 0 else f"over {humanize.naturaldelta(delta)}"
-        sluiting_exact = sluit_dt.strftime("%d/%m/%Y %H:%M")
-
-        categorie = data.get('categorie', {}).get('naam', 'Onbekend')
-        conditie = kavel.get('conditie', 'Onbekend')
-        verzendbaar = "Ja" if data.get('isShippable', False) else "Nee"
-        bouwjaar = kavel.get('bouwjaar', 'Onbekend')
-        merk = kavel.get('merk', 'Onbekend')
-
-        extra_info = (
-            f"📦 **Categorie:** {categorie}\n"
-            f"🏷️ **Conditie:** {conditie}\n"
-            f"🚚 **Verzendbaar:** {verzendbaar}\n"
-            f"🛠️ **Bouwjaar:** {bouwjaar}\n"
-            f"🔧 **Merk:** {merk}"
-        )
-
-        biedingen = data.get('biedingen', [])
-        top_bieders = []
-        for b in biedingen[:3]:
-            naam = b.get('bieder', '???')
-            bedrag = f"€ {b.get('bedrag', '?')},-"
-            top_bieders.append(f"**{naam}**: {bedrag}")
-        bieders_text = "\n".join(top_bieders) if top_bieders else "Geen biedingen gevonden."
+        delta = sluiting - now
 
         embed = discord.Embed(
             title=title,
             description=description[:2048],
             color=discord.Color.orange(),
-            url=f"https://www.onlineveilingmeester.nl/nl/veilingen/{veiling_id}/kavels/{volgnummer}"
+            url=f"https://www.onlineveilingmeester.nl/nl/veilingen/{auction_id}/kavels/{lot_id}"
         )
 
-        details_text = (
-            f"💰 **Hoogste bod:** {price}\n"
-            f"📈 **Startbod:** {start_price}\n"
-            f"🔨 **Biedingen:** {bid_count}\n"
-            f"⏳ **Sluit over:** {sluiting_over}\n"
-            f"📅 **Sluit op:** {sluiting_exact}"
-        )
+        embed.add_field(name="Details", value="\n".join([
+            f"💰 **Current Bid:** € {data.get('hoogsteBod', '??')},-",
+            f"📈 **Start Price:** € {data.get('openingsBod', '??')},-",
+            f"🔨 **Bids:** {data.get('aantalBiedingen', '?')}",
+            f"⏳ **Closes In:** {'Closed' if delta.total_seconds() <= 0 else humanize.naturaldelta(delta)}",
+            f"📅 **Closes On:** {sluiting.strftime('%d/%m/%Y %H:%M')}"
+        ]), inline=False)
 
-        embed.add_field(name="Details", value=details_text, inline=False)
-        embed.add_field(name="Extra info", value=extra_info, inline=False)
-        embed.add_field(name="Laatste biedingen", value=bieders_text, inline=False)
+        embed.add_field(name="Extra Info", value="\n".join([
+            f"📦 **Category:** {data.get('categorie', {}).get('naam', 'Unknown')}",
+            f"🏷️ **Condition:** {item.get('conditie', 'Unknown')}",
+            f"🚚 **Shippable:** {'Yes' if data.get('isShippable', False) else 'No'}",
+            f"🛠️ **Year:** {item.get('bouwjaar', 'Unknown')}",
+            f"🔧 **Brand:** {item.get('merk', 'Unknown')}"
+        ]), inline=False)
 
-        duration = (datetime.now() - start_time).total_seconds()
-        embed.add_field(name="⏱️ Verwerkingstijd", value=f"{duration:.2f} seconden", inline=False)
+        bids = data.get("biedingen", [])
+        top_bids = "\n".join([f"**{b.get('bieder', '?')}**: € {b.get('bedrag', '?')},-" for b in bids[:3]]) or "No bids yet."
+        embed.add_field(name="Top Bidders", value=top_bids, inline=False)
 
-        if image_urls:
-            grid_img = await compose_image_grid(image_urls)
-            if grid_img:
-                file = discord.File(grid_img, filename="fotos.png")
-                embed.set_image(url="attachment://fotos.png")
-                await message.reply(embed=embed, file=file)
-                await message.clear_reaction("⏳")
-                await message.add_reaction("✅")
-                return
+        embed.add_field(name="⏱️ Processing Time", value=f"{(datetime.now() - start).total_seconds():.2f}s", inline=False)
 
-        await message.reply(embed=embed)
+        if image_urls and (grid := await compose_image_grid(image_urls)):
+            file = discord.File(grid, filename="preview.png")
+            embed.set_image(url="attachment://preview.png")
+            await message.reply(embed=embed, file=file)
+        else:
+            await message.reply(embed=embed)
+
         await message.clear_reaction("⏳")
         await message.add_reaction("✅")
 
     except Exception as e:
-        log(f"❌ Fout OVM: {e}")
+        log(f"❌ OVM error: {e}")
         await message.clear_reaction("⏳")
         await message.add_reaction("❌")
-        await message.reply("⚠️ Kon OVM-details niet ophalen.")
+        await message.reply("⚠️ Error fetching auction details.")
 
-async def handle_drz(message, kavelnummer, start_time):
-    url = f"https://verkoop.domeinenrz.nl/verkoop_bij_inschrijving_2025-0009?meerfotos={kavelnummer}"
-    log(f"Verzoek naar DRZ-pagina: {url}")
+async def handle_drz(message, lot_code, start):
+    url = f"https://verkoop.domeinenrz.nl/verkoop_bij_inschrijving_2025-0009?meerfotos={lot_code}"
+    log(f"Fetching DRZ page: {url}")
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            if resp.status != 200:
+                await message.reply("❌ DRZ page not found.")
+                await message.clear_reaction("⏳")
+                await message.add_reaction("❌")
+                return
+            html = await resp.text(encoding="windows-1252")
+
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    await message.reply("DRZ-pagina niet gevonden.")
-                    await message.clear_reaction("⏳")
-                    await message.add_reaction("❌")
-                    return
-                html = await resp.text(encoding="windows-1252")
-
         soup = BeautifulSoup(html, "html.parser")
-        block = soup.find("div", class_="catalogusdetailitem")
-        if not block:
-            await message.reply("Kon DRZ-detail niet vinden.")
+        item = soup.find("div", class_="catalogusdetailitem")
+        if not item:
+            await message.reply("❌ DRZ detail block not found.")
             await message.clear_reaction("⏳")
             await message.add_reaction("❌")
             return
 
-        title = block.select_one("h4.title").get_text(strip=True) if block.select_one("h4.title") else "Geen titel"
-        description = block.get_text(separator="\n", strip=True)
-        description = strip_html(description)
-
-        img_tags = block.select("img")
-        image_urls = [
-            f"https://verkoop.domeinenrz.nl{img.get('data-hresimg')}"
-            for img in img_tags if img.get("data-hresimg")
-        ]
+        title = item.select_one("h4.title")
+        description = strip_html(item.get_text(separator="\n", strip=True))
+        images = [f"https://verkoop.domeinenrz.nl{img.get('data-hresimg')}" for img in item.select("img") if img.get("data-hresimg")]
 
         embed = discord.Embed(
-            title=title,
+            title=title.text.strip() if title else "(No Title)",
             description=description[:2048],
             color=discord.Color.teal(),
             url=url
         )
 
-        duration = (datetime.now() - start_time).total_seconds()
-        embed.add_field(name="⏱️ Verwerkingstijd", value=f"{duration:.2f} seconden", inline=False)
+        embed.add_field(name="⏱️ Processing Time", value=f"{(datetime.now() - start).total_seconds():.2f}s", inline=False)
 
-        if image_urls:
-            grid_img = await compose_image_grid(image_urls)
-            if grid_img:
-                file = discord.File(grid_img, filename="fotos.png")
-                embed.set_image(url="attachment://fotos.png")
-                await message.reply(embed=embed, file=file)
-                await message.clear_reaction("⏳")
-                await message.add_reaction("✅")
-                return
+        if images and (grid := await compose_image_grid(images)):
+            file = discord.File(grid, filename="preview.png")
+            embed.set_image(url="attachment://preview.png")
+            await message.reply(embed=embed, file=file)
+        else:
+            await message.reply(embed=embed)
 
-        await message.reply(embed=embed)
         await message.clear_reaction("⏳")
         await message.add_reaction("✅")
 
     except Exception as e:
-        log(f"❌ Fout DRZ: {e}")
+        log(f"❌ DRZ error: {e}")
         await message.clear_reaction("⏳")
         await message.add_reaction("❌")
-        await message.reply("⚠️ Kon DRZ-pagina niet ophalen.")
+        await message.reply("⚠️ Error fetching DRZ details.")
 
-def strip_html(html):
-    if not html:
-        return ""
+def strip_html(html: str) -> str:
+    """Remove HTML tags and convert breaks to newlines."""
     html = re.sub(r'<br\s*/?>', '\n', html, flags=re.IGNORECASE)
     html = re.sub(r'</p\s*>', '\n', html, flags=re.IGNORECASE)
     html = re.sub(r'<[^>]+>', '', html)
-    html = re.sub(r'\n+', '\n', html)
-    return html.strip()
+    return re.sub(r'\n+', '\n', html).strip()
 
-async def compose_image_grid(image_urls, grid_cols=None):
-    images = []
-
-    async def fetch_image(session, url):
+async def compose_image_grid(urls: list[str], grid_cols: int | None = None):
+    """Download up to 9 images and compose a grid preview."""
+    async def fetch(session, url):
         try:
             async with session.get(url, timeout=10) as resp:
                 if resp.status == 200:
-                    data = await resp.read()
-                    img = Image.open(BytesIO(data)).convert("RGB")
-                    return img
+                    return Image.open(BytesIO(await resp.read())).convert("RGB")
         except Exception as e:
-            log(f"Fout bij afbeelding {url}: {e}")
+            log(f"Image error ({url}): {e}")
         return None
 
     async with aiohttp.ClientSession() as session:
-        results = await asyncio.gather(*(fetch_image(session, url) for url in image_urls[:9]))
+        images = await asyncio.gather(*(fetch(session, url) for url in urls[:9]))
 
-    images = [img.resize((300, 300)) for img in results if img]
-
+    images = [img.resize((300, 300)) for img in images if img]
     if not images:
         return None
 
-    count = len(images)
-    grid_cols = grid_cols or (3 if count > 4 else 2)
-    rows = (count + grid_cols - 1) // grid_cols
+    cols = grid_cols or (3 if len(images) > 4 else 2)
+    rows = (len(images) + cols - 1) // cols
 
-    grid_img = Image.new('RGB', (grid_cols * 300, rows * 300), color=(255, 255, 255))
-    for idx, img in enumerate(images):
-        x = (idx % grid_cols) * 300
-        y = (idx // grid_cols) * 300
-        grid_img.paste(img, (x, y))
+    grid = Image.new("RGB", (cols * 300, rows * 300), (255, 255, 255))
+    for i, img in enumerate(images):
+        grid.paste(img, ((i % cols) * 300, (i // cols) * 300))
 
     output = BytesIO()
-    grid_img.save(output, format="PNG")
+    grid.save(output, format="PNG")
     output.seek(0)
     return output
 
-# === Start Bot ===
+# Start the bot
 bot.run(TOKEN)
