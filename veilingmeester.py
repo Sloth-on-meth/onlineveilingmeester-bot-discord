@@ -35,7 +35,7 @@ async def on_message(message):
         return
 
     start = datetime.now()
-    await message.add_reaction("⏳")
+#    await message.add_reaction("⏳")
     log(f"Bericht ontvangen: {message.content}")
 
     try:
