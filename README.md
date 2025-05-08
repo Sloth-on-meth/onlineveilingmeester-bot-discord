@@ -26,7 +26,7 @@ This Discord bot automatically scans messages for Dutch auction links (OnlineVei
 ### 1. Clone & Install
 
 ```bash
-git clone <your-repo>
+git clone https://github.com/Sloth-on-meth/onlineveilingmeester-bot-discord/
 cd your-repo
 pip install -r requirements.txt
 ```
