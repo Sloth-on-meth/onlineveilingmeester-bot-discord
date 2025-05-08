@@ -1,10 +1,10 @@
 import re
 import discord
 import aiohttp
+import asyncio
 from discord.ext import commands
 from PIL import Image
 from io import BytesIO
-import requests
 from datetime import datetime, timezone
 import humanize
 
@@ -42,7 +42,6 @@ async def on_message(message):
             # Data extractie
             title = data['kavelData']['naam']
 
-            # Fallback voor beschrijving
             description = strip_html(
                 data['kavelData'].get('specificaties') or
                 data['kavelData'].get('bijzonderheden') or
@@ -56,7 +55,7 @@ async def on_message(message):
             image_paths = data.get("imageList", [])
             image_urls = [f"https://www.onlineveilingmeester.nl/images/800x600/{path}" for path in image_paths]
 
-            # Sluitingstijd berekening
+            # Sluitingstijd
             sluit_iso = data.get("sluitingsDatumISO")
             sluit_dt = datetime.fromisoformat(sluit_iso.replace("Z", "+00:00"))
             now = datetime.now(timezone.utc)
@@ -108,29 +107,34 @@ def strip_html(html):
 
 async def compose_image_grid(image_urls, grid_cols=None):
     images = []
-    for url in image_urls[:9]:  # max 9 afbeeldingen
+
+    async def fetch_image(session, url):
         try:
-            response = requests.get(url, timeout=10)
-            img = Image.open(BytesIO(response.content)).convert("RGB")
-            images.append(img)
+            async with session.get(url, timeout=10) as resp:
+                if resp.status == 200:
+                    data = await resp.read()
+                    img = Image.open(BytesIO(data)).convert("RGB")
+                    return img
         except Exception as e:
             print(f"Fout bij afbeelding {url}: {e}")
+        return None
+
+    async with aiohttp.ClientSession() as session:
+        results = await asyncio.gather(*(fetch_image(session, url) for url in image_urls[:9]))
+
+    images = [img.resize((300, 300)) for img in results if img]
 
     if not images:
         return None
 
-    size = (300, 300)
-    images = [img.resize(size) for img in images]
-
     count = len(images)
-    if not grid_cols:
-        grid_cols = 3 if count > 4 else 2
+    grid_cols = grid_cols or (3 if count > 4 else 2)
     rows = (count + grid_cols - 1) // grid_cols
 
-    grid_img = Image.new('RGB', (grid_cols * size[0], rows * size[1]), color=(255, 255, 255))
+    grid_img = Image.new('RGB', (grid_cols * 300, rows * 300), color=(255, 255, 255))
     for idx, img in enumerate(images):
-        x = (idx % grid_cols) * size[0]
-        y = (idx // grid_cols) * size[1]
+        x = (idx % grid_cols) * 300
+        y = (idx // grid_cols) * 300
         grid_img.paste(img, (x, y))
 
     output = BytesIO()
