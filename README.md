@@ -1,4 +1,6 @@
-# Discord Veilingbot
+# Discord Veilingbot / Discord Auctionbot
+
+### WARNING - THIS BOT IS ENTIRELY VIBECODED WITH CHATGPT. NOT A SINGLE CHAR WAS MANUALLY TYPED. 
 
 ## 🇳🇱 Beschrijving
 
