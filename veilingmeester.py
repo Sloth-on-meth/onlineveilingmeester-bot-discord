@@ -3,33 +3,31 @@ import discord
 import aiohttp
 import asyncio
 from discord.ext import commands
-from PIL import Image
+from PIL import Image, ImageDraw
 from io import BytesIO
 from datetime import datetime, timezone
 import humanize
 from bs4 import BeautifulSoup
 
-# Load bot token from a secret file
+# Token inlezen
 with open("token.secret", "r") as f:
     TOKEN = f.read().strip()
 
-# Log file path
+# Logbestand
 LOGFILE = "veilingmeester_log.txt"
 
 def log(message: str):
-    """Append a timestamped log entry to the log file."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(LOGFILE, "a", encoding="utf-8") as f:
         f.write(f"[{timestamp}] {message}\n")
 
-# Initialize Discord bot with appropriate intents
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    log(f"Logged in as {bot.user}")
+    log(f"Aangemeld als {bot.user}")
 
 @bot.event
 async def on_message(message):
@@ -38,32 +36,30 @@ async def on_message(message):
 
     start = datetime.now()
     await message.add_reaction("⏳")
-    log(f"Received message: {message.content}")
+    log(f"Bericht ontvangen: {message.content}")
 
     try:
-        # Match OnlineVeilingmeester URL
         if match := re.search(r'onlineveilingmeester\.nl/(?:nl/veilingen|en/auctions)/(\d+)/(?:kavels|lots)/(\d+)', message.content):
             await handle_ovm(message, match.group(1), match.group(2), start)
-        # Match DomeinenRZ URL
         elif match := re.search(r'verkoop\.domeinenrz\.nl/[^ ]*?meerfotos=(K\d+)', message.content):
             await handle_drz(message, match.group(1), start)
         else:
             await bot.process_commands(message)
 
     except Exception as e:
-        log(f"❌ Unhandled error: {e}")
+        log(f"❌ Onverwerkte fout: {e}")
         await message.clear_reaction("⏳")
         await message.add_reaction("❌")
-        await message.reply("⚠️ Something went wrong while processing your message.")
+        await message.reply("⚠️ Er ging iets mis bij het verwerken van je bericht.")
 
 async def handle_ovm(message, auction_id, lot_id, start):
     url = f"https://www.onlineveilingmeester.nl/rest/nl/v2/veilingen/{auction_id}/kavels/{lot_id}"
-    log(f"Fetching OVM data from {url}")
+    log(f"OVM-data ophalen van {url}")
 
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
             if resp.status != 200:
-                await message.reply("❌ Failed to retrieve OVM data.")
+                await message.reply("❌ Kan OVM-data niet ophalen.")
                 await message.clear_reaction("⏳")
                 await message.add_reaction("❌")
                 return
@@ -71,13 +67,21 @@ async def handle_ovm(message, auction_id, lot_id, start):
 
     try:
         item = data.get("kavelData", {})
-        title = item.get("naam", "(No title)")
-        description = strip_html(item.get("specificaties") or item.get("bijzonderheden") or item.get("product") or "No description.")
-
+        title = item.get("naam", "(Geen titel)")
+        description = strip_html(item.get("specificaties") or item.get("bijzonderheden") or item.get("product") or "Geen beschrijving.")
         image_urls = [f"https://www.onlineveilingmeester.nl/images/800x600/{path}" for path in data.get("imageList", [])]
         sluiting = datetime.fromisoformat(data["sluitingsDatumISO"].replace("Z", "+00:00"))
         now = datetime.now(timezone.utc)
         delta = sluiting - now
+
+        try:
+            bod = float(data.get("hoogsteBod") or data.get("openingsBod") or 0)
+            kosten = round(bod * 0.17, 2)
+            btw = round((bod + kosten) * 0.21, 2)
+            totaal = round(bod + kosten + btw, 2)
+        except Exception as e:
+            log(f"❌ Fout bij bodberekening: {e}")
+            bod = kosten = btw = totaal = 0.0
 
         embed = discord.Embed(
             title=title,
@@ -86,27 +90,34 @@ async def handle_ovm(message, auction_id, lot_id, start):
             url=f"https://www.onlineveilingmeester.nl/nl/veilingen/{auction_id}/kavels/{lot_id}"
         )
 
-        embed.add_field(name="Details", value="\n".join([
-            f"💰 **Current Bid:** € {data.get('hoogsteBod', '??')},-",
-            f"📈 **Start Price:** € {data.get('openingsBod', '??')},-",
-            f"🔨 **Bids:** {data.get('aantalBiedingen', '?')}",
-            f"⏳ **Closes In:** {'Closed' if delta.total_seconds() <= 0 else humanize.naturaldelta(delta)}",
-            f"📅 **Closes On:** {sluiting.strftime('%d/%m/%Y %H:%M')}"
+        embed.add_field(name="📋 Details", value="\n".join([
+            f"💰 **Huidig bod:** € {bod:.2f},-",
+            f"📈 **Startbod:** € {data.get('openingsBod', '??')},-",
+            f"🔨 **Aantal biedingen:** {data.get('aantalBiedingen', '?')}",
+            f"⏳ **Sluit over:** {'Gesloten' if delta.total_seconds() <= 0 else humanize.naturaldelta(delta)}",
+            f"📅 **Sluit op:** {sluiting.strftime('%d/%m/%Y %H:%M')}"
         ]), inline=False)
 
-        embed.add_field(name="Extra Info", value="\n".join([
-            f"📦 **Category:** {data.get('categorie', {}).get('naam', 'Unknown')}",
-            f"🏷️ **Condition:** {item.get('conditie', 'Unknown')}",
-            f"🚚 **Shippable:** {'Yes' if data.get('isShippable', False) else 'No'}",
-            f"🛠️ **Year:** {item.get('bouwjaar', 'Unknown')}",
-            f"🔧 **Brand:** {item.get('merk', 'Unknown')}"
+        embed.add_field(name="💸 Kostenoverzicht", value="\n".join([
+            f"💰 Bod: € {bod:.2f}",
+            f"🧾 Veilingkosten (17%): € {kosten:.2f}",
+            f"🧾 BTW (21%): € {btw:.2f}",
+            f"💳 **Totaal te betalen:** € {totaal:.2f}"
+        ]), inline=False)
+
+        embed.add_field(name="📦 Extra informatie", value="\n".join([
+            f"📂 **Categorie:** {data.get('categorie', {}).get('naam', 'Onbekend')}",
+            f"🏷️ **Staat:** {item.get('conditie', 'Onbekend')}",
+            f"🚚 **Verzendbaar:** {'Ja' if data.get('isShippable', False) else 'Nee'}",
+            f"🛠️ **Bouwjaar:** {item.get('bouwjaar', 'Onbekend')}",
+            f"🔧 **Merk:** {item.get('merk', 'Onbekend')}"
         ]), inline=False)
 
         bids = data.get("biedingen", [])
-        top_bids = "\n".join([f"**{b.get('bieder', '?')}**: € {b.get('bedrag', '?')},-" for b in bids[:3]]) or "No bids yet."
-        embed.add_field(name="Top Bidders", value=top_bids, inline=False)
+        top_bids = "\n".join([f"**{b.get('bieder', '?')}**: € {b.get('bedrag', '?')},-" for b in bids[:3]]) or "Nog geen biedingen."
+        embed.add_field(name="👑 Topbieders", value=top_bids, inline=False)
 
-        embed.add_field(name="⏱️ Processing Time", value=f"{(datetime.now() - start).total_seconds():.2f}s", inline=False)
+        embed.add_field(name="⏱️ Verwerkingstijd", value=f"{(datetime.now() - start).total_seconds():.2f}s", inline=False)
 
         if image_urls and (grid := await compose_image_grid(image_urls)):
             file = discord.File(grid, filename="preview.png")
@@ -119,19 +130,19 @@ async def handle_ovm(message, auction_id, lot_id, start):
         await message.add_reaction("✅")
 
     except Exception as e:
-        log(f"❌ OVM error: {e}")
+        log(f"❌ OVM-fout: {e}")
         await message.clear_reaction("⏳")
         await message.add_reaction("❌")
-        await message.reply("⚠️ Error fetching auction details.")
+        await message.reply("⚠️ Fout bij ophalen veilingdetails.")
 
 async def handle_drz(message, lot_code, start):
     url = f"https://verkoop.domeinenrz.nl/verkoop_bij_inschrijving_2025-0009?meerfotos={lot_code}"
-    log(f"Fetching DRZ page: {url}")
+    log(f"DRZ-pagina ophalen: {url}")
 
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
             if resp.status != 200:
-                await message.reply("❌ DRZ page not found.")
+                await message.reply("❌ DRZ-pagina niet gevonden.")
                 await message.clear_reaction("⏳")
                 await message.add_reaction("❌")
                 return
@@ -141,7 +152,7 @@ async def handle_drz(message, lot_code, start):
         soup = BeautifulSoup(html, "html.parser")
         item = soup.find("div", class_="catalogusdetailitem")
         if not item:
-            await message.reply("❌ DRZ detail block not found.")
+            await message.reply("❌ Geen details gevonden op DRZ.")
             await message.clear_reaction("⏳")
             await message.add_reaction("❌")
             return
@@ -151,13 +162,13 @@ async def handle_drz(message, lot_code, start):
         images = [f"https://verkoop.domeinenrz.nl{img.get('data-hresimg')}" for img in item.select("img") if img.get("data-hresimg")]
 
         embed = discord.Embed(
-            title=title.text.strip() if title else "(No Title)",
+            title=title.text.strip() if title else "(Geen titel)",
             description=description[:2048],
             color=discord.Color.teal(),
             url=url
         )
 
-        embed.add_field(name="⏱️ Processing Time", value=f"{(datetime.now() - start).total_seconds():.2f}s", inline=False)
+        embed.add_field(name="⏱️ Verwerkingstijd", value=f"{(datetime.now() - start).total_seconds():.2f}s", inline=False)
 
         if images and (grid := await compose_image_grid(images)):
             file = discord.File(grid, filename="preview.png")
@@ -170,20 +181,22 @@ async def handle_drz(message, lot_code, start):
         await message.add_reaction("✅")
 
     except Exception as e:
-        log(f"❌ DRZ error: {e}")
+        log(f"❌ DRZ-fout: {e}")
         await message.clear_reaction("⏳")
         await message.add_reaction("❌")
-        await message.reply("⚠️ Error fetching DRZ details.")
+        await message.reply("⚠️ Fout bij ophalen DRZ-details.")
 
 def strip_html(html: str) -> str:
-    """Remove HTML tags and convert breaks to newlines."""
     html = re.sub(r'<br\s*/?>', '\n', html, flags=re.IGNORECASE)
     html = re.sub(r'</p\s*>', '\n', html, flags=re.IGNORECASE)
     html = re.sub(r'<[^>]+>', '', html)
     return re.sub(r'\n+', '\n', html).strip()
 
-async def compose_image_grid(urls: list[str], grid_cols: int | None = None):
-    """Download up to 9 images and compose a grid preview."""
+async def compose_image_grid(urls: list[str]):
+    TILE_SIZE = 400
+    GRID_SIZE = 3
+    CANVAS_SIZE = TILE_SIZE * GRID_SIZE
+
     async def fetch(session, url):
         try:
             async with session.get(url, timeout=10) as resp:
@@ -196,21 +209,23 @@ async def compose_image_grid(urls: list[str], grid_cols: int | None = None):
     async with aiohttp.ClientSession() as session:
         images = await asyncio.gather(*(fetch(session, url) for url in urls[:9]))
 
-    images = [img.resize((300, 300)) for img in images if img]
+    images = [img.resize((TILE_SIZE, TILE_SIZE)) for img in images if img]
     if not images:
         return None
 
-    cols = grid_cols or (3 if len(images) > 4 else 2)
-    rows = (len(images) + cols - 1) // cols
+    grid = Image.new("RGB", (CANVAS_SIZE, CANVAS_SIZE), (255, 255, 255))
+    draw = ImageDraw.Draw(grid)
 
-    grid = Image.new("RGB", (cols * 300, rows * 300), (255, 255, 255))
     for i, img in enumerate(images):
-        grid.paste(img, ((i % cols) * 300, (i // cols) * 300))
+        x = (i % GRID_SIZE) * TILE_SIZE
+        y = (i // GRID_SIZE) * TILE_SIZE
+        grid.paste(img, (x, y))
+        draw.rectangle([x, y, x + TILE_SIZE - 1, y + TILE_SIZE - 1], outline="black", width=1)
 
     output = BytesIO()
     grid.save(output, format="PNG")
     output.seek(0)
     return output
 
-# Start the bot
+# Start de bot
 bot.run(TOKEN)
