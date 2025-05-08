@@ -1,7 +1,7 @@
 # 🧠 Discord Auction Bot — Veilingmeester Edition
 
 
-###THIS BOT WAS AUTOMATICALLY GENERATED WITH CHATGPT IN ITS ENTIRETY AS AN EXPERIMENT. it was guided by me, but i did not type a single character manually. BE WARNED!
+### ❗❗❗THIS BOT WAS AUTOMATICALLY GENERATED WITH CHATGPT IN ITS ENTIRETY AS AN EXPERIMENT. it was guided by me, but i did not type a single character manually. BE WARNED!❗❗❗
 
 
 This Discord bot automatically scans messages for Dutch auction links (OnlineVeilingmeester.nl and DomeinenRZ.nl) and drops clean, image-rich embed previews with real-time data. It's async, it's snappy, it's got emojis. It's your auction butler in the chat.
