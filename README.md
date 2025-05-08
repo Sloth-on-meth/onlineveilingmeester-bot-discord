@@ -4,6 +4,7 @@ Een Discord-bot die automatisch veilinglinks van [Onlineveilingmeester.nl](https
 
 ## ⚙️ Features
 
+- Entirely vibecoded - letterlijk geen karakter hieraan is zelf getypt. ja, misschien de token. fuck, ouwe
 - Herkent veilinglinks automatisch in berichten
 - Haalt data op via de officiële REST API
 - Genereert een nette Discord embed met:
