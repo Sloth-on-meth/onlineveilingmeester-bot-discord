@@ -15,6 +15,7 @@ Een Discord-bot die automatisch veilinglinks van [Onlineveilingmeester.nl](https
   - ⏳ Tijd tot sluiting
   - 📅 Exacte sluitdatum (`DD/MM/YYYY HH:MM`)
 - Downloadt tot 9 foto's en toont ze als een collage
+
 ![image](https://github.com/user-attachments/assets/c3fae9d5-e20e-4de6-8bb2-199951fa844b)
 
 
