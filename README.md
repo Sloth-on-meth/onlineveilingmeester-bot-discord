@@ -1,4 +1,4 @@
-# vibecoded
+# Auction discord bot
 
 A Discord bot that automatically parses and responds to auction links from:
 
