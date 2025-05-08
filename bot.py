@@ -41,7 +41,15 @@ async def on_message(message):
 
             # Data extractie
             title = data['kavelData']['naam']
-            description = strip_html(data['kavelData']['specificaties']) or "Geen beschrijving beschikbaar."
+
+            # Fallback voor beschrijving
+            description = strip_html(
+                data['kavelData'].get('specificaties') or
+                data['kavelData'].get('bijzonderheden') or
+                data['kavelData'].get('product') or
+                "Geen beschrijving beschikbaar."
+            )
+
             price = f"€ {data['hoogsteBod']},-"
             start_price = f"€ {data['openingsBod']},-"
             bid_count = data['aantalBiedingen']
