@@ -1,41 +1,71 @@
-# Discord Veilingbot / Discord Auctionbot
+# 🧠 Discord Auction Bot — Veilingmeester Edition
 
-### WARNING - THIS BOT IS ENTIRELY VIBECODED WITH CHATGPT. NOT A SINGLE CHAR WAS MANUALLY TYPED. 
 
-## 🇳🇱 Beschrijving
+###THIS BOT WAS AUTOMATICALLY GENERATED WITH CHATGPT IN ITS ENTIRETY AS AN EXPERIMENT. it was guided by me, but i did not type a single character manually. BE WARNED!
 
-Deze Discord-bot herkent links van OnlineVeilingmeester.nl en DomeinenRZ.nl en toont automatisch veilinginformatie in een nette embed met afbeeldingen.
 
-### Functionaliteiten
+This Discord bot automatically scans messages for Dutch auction links (OnlineVeilingmeester.nl and DomeinenRZ.nl) and drops clean, image-rich embed previews with real-time data. It's async, it's snappy, it's got emojis. It's your auction butler in the chat.
 
-- Ondersteunt:
-  - https://www.onlineveilingmeester.nl/nl/veilingen/VEILINGID/kavels/VOLGNUMMER
-  - https://verkoop.domeinenrz.nl/...meerfotos=KXXXX
-- Reageert met een zandloper terwijl de gegevens worden opgehaald.
-- Toont een ✅ bij succes of ❌ bij een fout.
-- Laat verwerkingstijd zien in seconden.
-- Combineert tot 9 afbeeldingen in een raster.
-- Logt alle activiteiten naar `veilingmeester_log.txt`.
+---
 
-### Installatie
+## ⚙️ Features
 
-1. Zorg dat je Python 3.9+ hebt geïnstalleerd.
-2. Installeer de vereiste pakketten:
+- 🧠 Detects and parses auction listings from:
+  - `onlineveilingmeester.nl/nl/veilingen/.../kavels/...`
+  - `verkoop.domeinenrz.nl/...meerfotos=Kxxxx`
+- 📦 Displays detailed info: title, description, condition, bids, shipping, close time, top bidders, etc.
+- 🖼️ Combines up to 9 images into a grid preview.
+- ⏳ Shows a loading emoji while processing, then ✅ or ❌ depending on success.
+- 🕵️ Logs everything to `veilingmeester_log.txt` for debugging or just vibing on what it's doing.
+- ⏱️ Shows how long it took to process the listing in each embed.
+
+---
+
+## 🚀 Quick Start
+
+### 1. Clone & Install
 
 ```bash
+git clone <your-repo>
+cd your-repo
 pip install -r requirements.txt
 ```
 
-3. Voeg je Discord bot-token toe aan `token.secret` (enkel de token-string).
-4. Start de bot:
+### 2. Add Your Bot Token
+
+Create a file named `token.secret` (yes, literally that name) in the root directory.  
+Put your bot token in that file — just the raw token string, nothing else.
+
+```
+MTAxMjM0NTY3ODkw.YZABCD.FakeTokenStringHere123456
+```
+
+Don't commit this. I swear.
+
+### 3. Run It
 
 ```bash
 python bot.py
 ```
 
-### Vereisten
+You should see something like:
 
-```text
+```
+[2025-05-08 20:32:15] Bot ingelogd als VeilingBot#0420
+```
+
+### 4. Drop Auction Links in Discord
+
+Paste any supported auction link into any channel the bot can read.  
+You’ll see a nice embed with photos, status, and even the latest bids.
+
+---
+
+## 🔗 Requirements
+
+You're good with the latest versions of these:
+
+```
 discord.py
 aiohttp
 Pillow
@@ -43,42 +73,24 @@ beautifulsoup4
 humanize
 ```
 
-## 🇬🇧 Description
+Already included in the `requirements.txt`.
 
-This Discord bot detects links to OnlineVeilingmeester.nl and DomeinenRZ.nl auctions and automatically posts detailed auction info in an embed with photos.
+---
 
-### Features
+## 🛠️ Logging
 
-- Supports:
-  - https://www.onlineveilingmeester.nl/en/auctions/VEILINGID/lots/VOLGNUMMER
-  - https://verkoop.domeinenrz.nl/...meerfotos=KXXXX
-- Shows ⏳ while fetching, ✅ when done, ❌ on error.
-- Displays auction title, description, condition, price, shipping status, top bidders, and more.
-- Combines up to 9 photos into a single grid.
-- Logs everything to `veilingmeester_log.txt`.
+All activity is saved in `veilingmeester_log.txt` — each line timestamped.  
+You can tail it, grep it, or just read it like a novel about second-hand dishwashers and seized trailers.
 
-### Setup
+---
 
-1. Make sure you have Python 3.9+ installed.
-2. Install dependencies:
+## 💬 Support
 
-```bash
-pip install -r requirements.txt
-```
+Built by nerds for nerds. If it breaks, blame async.  
+If it works, consider screaming “GEWELDIG BOD!” into the void.
 
-3. Put your Discord bot token in `token.secret` (just the token string).
-4. Run the bot:
+---
 
-```bash
-python bot.py
-```
+## ✨ License
 
-### Requirements
-
-```text
-discord.py
-aiohttp
-Pillow
-beautifulsoup4
-humanize
-```
+MIT. Do what you want, just don’t turn it into an NFT.
