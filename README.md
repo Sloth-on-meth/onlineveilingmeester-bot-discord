@@ -1,71 +1,47 @@
-# 🧠 VeilingBot
+# Veilingmeester Discord Bot
 
-Een Discord-bot die automatisch informatie ophaalt bij:
+Deze bot verwerkt automatisch veilinglinks van:
 
-* [onlineveilingmeester.nl](https://www.onlineveilingmeester.nl)
-* [verkoop.domeinenrz.nl](https://verkoop.domeinenrz.nl)
+* [OnlineVeilingmeester.nl](https://www.onlineveilingmeester.nl/)
+* [Domeinenrz.nl](https://verkoop.domeinenrz.nl)
 
-Wanneer iemand een link plaatst naar een kavel op een van deze sites, genereert de bot automatisch een mooie Discord embed met:
+Bij het plaatsen van een link in een Discord-kanaal, genereert de bot automatisch een embed met:
 
-* Titel en beschrijving
-* Sluitingsdatum en tijd
-* Actueel bod + kostenoverzicht
-* Biedhistorie (OVM)
-* Belangrijke eigenschappen zoals verzendbaarheid, merk, staat
-* Een 3x3 afbeeldingsgrid van de foto's
+* Titel, sluitingsdatum, huidige bod, kosten en BTW
+* Afbeeldingen in een nette 3x3 preview grid (1200×1200 px met zwarte rand)
+* 🧠 **AI-samenvatting** van het object via OpenAI `gpt-4o`
+* 📄 Volledige omschrijving (originele tekst van de aanbieder)
 
-## 🔧 Features
+## Vereisten
 
-* Automatische parsing van URLs in berichten
-* Live data ophalen via REST of HTML scraping
-* Realtime kostencalculatie (bod + veilingkosten + btw)
-* Verwerkingstijdmeting
-* Inline afbeeldingengrid (max 9 afbeeldingen)
-* Logging van alle activiteiten naar `veilingmeester_log.txt`
-* Schattige AI-reacties op het woord "skibidi" 🧻
+Python 3.10+
 
-## ⚙️ Installatie
-
-1. Zorg dat je Python 3.10+ hebt.
-2. Installeer dependencies:
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Maak een `token.secret` bestand aan met je Discord bot-token:
-
-   ```
-   echo "YOUR_BOT_TOKEN" > token.secret
-   ```
-4. Start de bot:
-
-   ```bash
-   python main.py
-   ```
-
-## 📦 Vereisten
-
-* `discord.py`
-* `aiohttp`
-* `Pillow`
-* `beautifulsoup4`
-* `humanize`
-
-Je kunt dit alles installeren met:
+Installeer dependencies:
 
 ```bash
-pip install discord.py aiohttp pillow beautifulsoup4 humanize
+pip install -r requirements.txt
 ```
 
-## 📝 Credits
+## Secrets
 
-**100% ChatGPT VibeCode™**
+Plaats je OpenAI- en Discord-token in de volgende bestanden:
 
-Ik (Sam) heb 0,0 zelf getypt aan deze bot, behalve dan `skibidi`.
-De rest is AI-magic. 🌟
-Spaghetti verzekerd, maar hij werkt. 🤘
+```
+token.secret         # Discord bot token
+openai.secret        # OpenAI API key (v1-stijl, géén legacy)
+```
 
-## 📄 Licentie
+## Starten
 
-Doe ermee wat je wil. Liever geen production-grade bots op draaien tenzij je weet wat je doet.
-Of niet. Ik ben niet je moeder.
+```bash
+python bot.py
+```
+
+De bot luistert automatisch op nieuwe berichten met veilinglinks.
+
+## Features
+
+* ✅ Ondersteuning voor OVM + DomeinenRZ
+* ✅ Inline AI-samenvatting in het Nederlands (gpt-4o)
+* ✅ Afbeeldingsgrid met 1px zwarte borders
+* ✅ Netto veilingprijsberekening incl. 17% kosten en 21% btw
