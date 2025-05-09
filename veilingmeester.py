@@ -38,13 +38,30 @@ async def on_ready():
 async def on_message(message):
     if message.author.bot:
         return
+    if message.content.startswith("!purge"):
+        parts = message.content.split()
+        if len(parts) != 2 or not parts[1].isdigit():
+            await message.channel.send("Gebruik: `!skibidipurge <aantal>` (max 100)")
+            return
 
+        amount = int(parts[1])
+        if amount < 1 or amount > 100:
+            await message.channel.send("Geef een getal tussen 1 en 100.")
+            return
+
+        deleted = await message.channel.purge(limit=amount + 1)  # +1 om ook het commando zelf te verwijderen
+        confirm = await message.channel.send(f"🧻 Skibidi-purge uitgevoerd: {len(deleted)-1} berichten verwijderd.")
+        await confirm.delete(delay=3)
+    if "skibidi" in message.content.lower():
+        await message.reply('toilet https://www.youtube.com/watch?v=WePNs-G7puA')
+        await message.add_reaction("🚽")  # Voeg hier de gewenste emoji toe
+        return
+
+    
     if message.channel.id != ALLOWED_CHANNEL_ID:
         return
 
-    if "skibidi" in message.content.lower():
-        await message.reply('toilet https://www.youtube.com/watch?v=WePNs-G7puA')
-        return
+
 
     start = datetime.now()
     log(f"Bericht ontvangen: {message.content}")
