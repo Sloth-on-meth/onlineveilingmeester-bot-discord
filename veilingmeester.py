@@ -170,12 +170,31 @@ async def handle_drz(message, lot_code, start):
         description = strip_html(item.get_text(separator="\n", strip=True))
         images = [f"https://verkoop.domeinenrz.nl{img.get('data-hresimg')}" for img in item.select("img") if img.get("data-hresimg")]
 
+        samenvatting = await genereer_samenvatting(
+        titel=title.text.strip() if title else "(Geen titel)",
+        beschrijving=description,
+        fotos=images,
+        bod=0.0,
+        btw=0.0,
+        totaal=0.0,
+        sluiting="Onbekend",
+        categorie="Onbekend",
+        staat="Onbekend",
+        verzendbaar="Onbekend",
+        bouwjaar="Onbekend",
+        merk="Onbekend",
+        startbod="Onbekend",
+        topbieders=[]
+        )
+
         embed = discord.Embed(
             title=title.text.strip() if title else "(Geen titel)",
-            description=description[:2048],
+            description=("🧠 AI Samenvatting\n"+samenvatting),
             color=discord.Color.teal(),
             url=url
         )
+        #embed.add_field(name="🧠 AI Samenvatting", value=samenvatting, inline=False)
+        embed.add_field(name="Originele beschrijving", value=description[:2048])
 
         embed.add_field(name="⏱️ Verwerkingstijd", value=f"{(datetime.now() - start).total_seconds():.2f}s", inline=False)
 
