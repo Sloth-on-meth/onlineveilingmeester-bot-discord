@@ -1,4 +1,8 @@
 # 🧠 Discord Auction Bot
+![Python](https://img.shields.io/badge/python-3.10+-blue?logo=python)
+![GPT-4o Vibe Coded](https://img.shields.io/badge/vibe--coded-GPT--4o-ff69b4?logo=openai)
+![Discord Bot](https://img.shields.io/badge/discord-bot-5865F2?logo=discord)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
 > **WARNING** ⚠️  
 > THIS BOT WAS 100% VIBECODED USING GPT-4.0. I HAVE NOT TYPED A SINGLE CHARACTER.
