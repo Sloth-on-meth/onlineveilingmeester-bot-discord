@@ -106,6 +106,7 @@ async def handle_ovm(message, auction_id, lot_id, start):
             color=discord.Color.orange(),
             url=f"https://www.onlineveilingmeester.nl/nl/veilingen/{auction_id}/kavels/{lot_id}"
         )
+        embed.add_field(name="🧠 AI Samenvatting", value=samenvatting, inline=False)
 
         embed.add_field(name="📋 Details", value="\n".join([
             f"💰 **Huidig bod:** € {bod:.2f},-",
@@ -133,7 +134,7 @@ async def handle_ovm(message, auction_id, lot_id, start):
         top_bids = "\n".join([f"**{b.get('bieder', '?')}**: € {b.get('bedrag', '?')},-" for b in topbieders]) or "Nog geen biedingen."
         embed.add_field(name="👑 Topbieders", value=top_bids, inline=False)
 
-        embed.add_field(name="🧠 AI Samenvatting", value=samenvatting, inline=False)
+        
         embed.add_field(name="⏱️ Verwerkingstijd", value=f"{(datetime.now() - start).total_seconds():.2f}s", inline=False)
 
         if image_urls and (grid := await compose_image_grid(image_urls)):
