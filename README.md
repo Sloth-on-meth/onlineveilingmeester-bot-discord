@@ -30,12 +30,8 @@ pip install -r requirements.txt
 
 ## Secrets
 
-Plaats je OpenAI- en Discord-token in de volgende bestanden:
+Plaats je OpenAI- en Discord-token, en kanaal waar de bot in moet reageren in config.json
 
-```
-token.secret         # Discord bot token
-openai.secret        # OpenAI API key (v1-stijl, géén legacy)
-```
 
 ## Starten
 
