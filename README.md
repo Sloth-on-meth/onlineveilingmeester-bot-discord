@@ -1,5 +1,11 @@
 # Veilingmeester Discord Bot
 
+
+# WARNING - THIS BOT WAS 100% VIBECODED USING GPT4.0. I HAVE NOT TYPED A SINGLE CHARACTER. 
+
+
+
+
 Deze bot verwerkt automatisch veilinglinks van:
 
 * [OnlineVeilingmeester.nl](https://www.onlineveilingmeester.nl/)
