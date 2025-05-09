@@ -8,12 +8,13 @@ from io import BytesIO
 from datetime import datetime, timezone
 import humanize
 from bs4 import BeautifulSoup
+import openai
 
-# Token inlezen
+# Laad tokens
+openai.api_key = open("openai.secret").read().strip()
 with open("token.secret", "r") as f:
     TOKEN = f.read().strip()
 
-# Logbestand
 LOGFILE = "veilingmeester_log.txt"
 
 def log(message: str):
@@ -33,10 +34,12 @@ async def on_ready():
 async def on_message(message):
     if message.author.bot:
         return
-    if "skibidi" in message.content:
-        await message.reply('toilet')
+
+    if "skibidi" in message.content.lower():
+        await message.reply('toilet https://www.youtube.com/watch?v=WePNs-G7puA')
+        return
+
     start = datetime.now()
-#    await message.add_reaction("⏳")
     log(f"Bericht ontvangen: {message.content}")
 
     try:
@@ -46,11 +49,8 @@ async def on_message(message):
             await handle_drz(message, match.group(1), start)
         else:
             await bot.process_commands(message)
-
     except Exception as e:
         log(f"❌ Onverwerkte fout: {e}")
-        await message.clear_reaction("⏳")
-        await message.add_reaction("❌")
         await message.reply("⚠️ Er ging iets mis bij het verwerken van je bericht.")
 
 async def handle_ovm(message, auction_id, lot_id, start):
@@ -61,8 +61,6 @@ async def handle_ovm(message, auction_id, lot_id, start):
         async with session.get(url) as resp:
             if resp.status != 200:
                 await message.reply("❌ Kan OVM-data niet ophalen.")
-                await message.clear_reaction("⏳")
-                await message.add_reaction("❌")
                 return
             data = await resp.json()
 
@@ -83,6 +81,24 @@ async def handle_ovm(message, auction_id, lot_id, start):
         except Exception as e:
             log(f"❌ Fout bij bodberekening: {e}")
             bod = kosten = btw = totaal = 0.0
+
+        topbieders = data.get("biedingen", [])[:3]
+        samenvatting = await genereer_samenvatting(
+            titel=title,
+            beschrijving=description,
+            fotos=image_urls,
+            bod=bod,
+            btw=btw,
+            totaal=totaal,
+            sluiting=sluiting.strftime('%d/%m/%Y %H:%M'),
+            categorie=data.get("categorie", {}).get("naam", "Onbekend"),
+            staat=item.get("conditie", "Onbekend"),
+            verzendbaar="Ja" if data.get("isShippable", False) else "Nee",
+            bouwjaar=item.get("bouwjaar", "Onbekend"),
+            merk=item.get("merk", "Onbekend"),
+            startbod=data.get("openingsBod", "??"),
+            topbieders=topbieders
+        )
 
         embed = discord.Embed(
             title=title,
@@ -114,10 +130,10 @@ async def handle_ovm(message, auction_id, lot_id, start):
             f"🔧 **Merk:** {item.get('merk', 'Onbekend')}"
         ]), inline=False)
 
-        bids = data.get("biedingen", [])
-        top_bids = "\n".join([f"**{b.get('bieder', '?')}**: € {b.get('bedrag', '?')},-" for b in bids[:3]]) or "Nog geen biedingen."
+        top_bids = "\n".join([f"**{b.get('bieder', '?')}**: € {b.get('bedrag', '?')},-" for b in topbieders]) or "Nog geen biedingen."
         embed.add_field(name="👑 Topbieders", value=top_bids, inline=False)
 
+        embed.add_field(name="🧠 AI Samenvatting", value=samenvatting, inline=False)
         embed.add_field(name="⏱️ Verwerkingstijd", value=f"{(datetime.now() - start).total_seconds():.2f}s", inline=False)
 
         if image_urls and (grid := await compose_image_grid(image_urls)):
@@ -127,13 +143,8 @@ async def handle_ovm(message, auction_id, lot_id, start):
         else:
             await message.reply(embed=embed)
 
-        await message.clear_reaction("⏳")
-        await message.add_reaction("✅")
-
     except Exception as e:
         log(f"❌ OVM-fout: {e}")
-        await message.clear_reaction("⏳")
-        await message.add_reaction("❌")
         await message.reply("⚠️ Fout bij ophalen veilingdetails.")
 
 async def handle_drz(message, lot_code, start):
@@ -144,8 +155,6 @@ async def handle_drz(message, lot_code, start):
         async with session.get(url) as resp:
             if resp.status != 200:
                 await message.reply("❌ DRZ-pagina niet gevonden.")
-                await message.clear_reaction("⏳")
-                await message.add_reaction("❌")
                 return
             html = await resp.text(encoding="windows-1252")
 
@@ -154,8 +163,6 @@ async def handle_drz(message, lot_code, start):
         item = soup.find("div", class_="catalogusdetailitem")
         if not item:
             await message.reply("❌ Geen details gevonden op DRZ.")
-            await message.clear_reaction("⏳")
-            await message.add_reaction("❌")
             return
 
         title = item.select_one("h4.title")
@@ -178,13 +185,8 @@ async def handle_drz(message, lot_code, start):
         else:
             await message.reply(embed=embed)
 
-        await message.clear_reaction("⏳")
-        await message.add_reaction("✅")
-
     except Exception as e:
         log(f"❌ DRZ-fout: {e}")
-        await message.clear_reaction("⏳")
-        await message.add_reaction("❌")
         await message.reply("⚠️ Fout bij ophalen DRZ-details.")
 
 def strip_html(html: str) -> str:
@@ -227,6 +229,38 @@ async def compose_image_grid(urls: list[str]):
     grid.save(output, format="PNG")
     output.seek(0)
     return output
+
+async def genereer_samenvatting(titel, beschrijving, fotos, bod, btw, totaal, sluiting, categorie, staat, verzendbaar, bouwjaar, merk, startbod, topbieders):
+    topbieders_str = "\n".join([f"{b.get('bieder', '?')}: € {b.get('bedrag', '?')},-" for b in topbieders]) or "Geen bieders"
+    prompt = (
+        f"Vat dit veilingobject samen in maximaal 50 woorden, in het Nederlands.\n"
+        f"Titel: {titel}\n"
+        f"Beschrijving: {beschrijving[:500]}\n"
+        f"Aantal foto's: {len(fotos)}\n"
+        f"Huidig bod: € {bod:.2f}\n"
+        f"BTW: € {btw:.2f}\n"
+        f"Totaal: € {totaal:.2f}\n"
+        f"Sluit op: {sluiting}\n"
+        f"Categorie: {categorie}\n"
+        f"Staat: {staat}\n"
+        f"Verzendbaar: {verzendbaar}\n"
+        f"Bouwjaar: {bouwjaar}\n"
+        f"Merk: {merk}\n"
+        f"Startbod: {startbod}\n"
+        f"Topbieders:\n{topbieders_str}"
+    )
+
+    try:
+        response = await openai.ChatCompletion.acreate(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=100,
+            temperature=0.7
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        log(f"❌ OpenAI-fout bij samenvatting: {e}")
+        return "Samenvatting kon niet worden gegenereerd."
 
 # Start de bot
 bot.run(TOKEN)
