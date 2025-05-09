@@ -2,6 +2,7 @@ import re
 import discord
 import aiohttp
 import asyncio
+import json
 from discord.ext import commands
 from PIL import Image, ImageDraw
 from io import BytesIO
@@ -10,10 +11,13 @@ import humanize
 from bs4 import BeautifulSoup
 import openai
 
-# Laad tokens
-openai.api_key = open("openai.secret").read().strip()
-with open("token.secret", "r") as f:
-    TOKEN = f.read().strip()
+# Laad config
+with open("config.json") as f:
+    config = json.load(f)
+
+openai.api_key = config["openai_api_key"]
+TOKEN = config["discord_token"]
+ALLOWED_CHANNEL_ID = config["allowed_channel_id"]
 
 LOGFILE = "veilingmeester_log.txt"
 
@@ -33,6 +37,9 @@ async def on_ready():
 @bot.event
 async def on_message(message):
     if message.author.bot:
+        return
+
+    if message.channel.id != ALLOWED_CHANNEL_ID:
         return
 
     if "skibidi" in message.content.lower():
@@ -134,7 +141,6 @@ async def handle_ovm(message, auction_id, lot_id, start):
         top_bids = "\n".join([f"**{b.get('bieder', '?')}**: € {b.get('bedrag', '?')},-" for b in topbieders]) or "Nog geen biedingen."
         embed.add_field(name="👑 Topbieders", value=top_bids, inline=False)
 
-        
         embed.add_field(name="⏱️ Verwerkingstijd", value=f"{(datetime.now() - start).total_seconds():.2f}s", inline=False)
 
         if image_urls and (grid := await compose_image_grid(image_urls)):
@@ -171,31 +177,29 @@ async def handle_drz(message, lot_code, start):
         images = [f"https://verkoop.domeinenrz.nl{img.get('data-hresimg')}" for img in item.select("img") if img.get("data-hresimg")]
 
         samenvatting = await genereer_samenvatting(
-        titel=title.text.strip() if title else "(Geen titel)",
-        beschrijving=description,
-        fotos=images,
-        bod=0.0,
-        btw=0.0,
-        totaal=0.0,
-        sluiting="Onbekend",
-        categorie="Onbekend",
-        staat="Onbekend",
-        verzendbaar="Onbekend",
-        bouwjaar="Onbekend",
-        merk="Onbekend",
-        startbod="Onbekend",
-        topbieders=[]
+            titel=title.text.strip() if title else "(Geen titel)",
+            beschrijving=description,
+            fotos=images,
+            bod=0.0,
+            btw=0.0,
+            totaal=0.0,
+            sluiting="Onbekend",
+            categorie="Onbekend",
+            staat="Onbekend",
+            verzendbaar="Onbekend",
+            bouwjaar="Onbekend",
+            merk="Onbekend",
+            startbod="Onbekend",
+            topbieders=[]
         )
 
         embed = discord.Embed(
             title=title.text.strip() if title else "(Geen titel)",
-            description=("🧠 AI Samenvatting\n"+samenvatting),
+            description=("🧠 AI Samenvatting\n" + samenvatting),
             color=discord.Color.teal(),
             url=url
         )
-        #embed.add_field(name="🧠 AI Samenvatting", value=samenvatting, inline=False)
         embed.add_field(name="Originele beschrijving", value=description[:2048])
-
         embed.add_field(name="⏱️ Verwerkingstijd", value=f"{(datetime.now() - start).total_seconds():.2f}s", inline=False)
 
         if images and (grid := await compose_image_grid(images)):
