@@ -47,7 +47,7 @@ pip install -r requirements.txt
 {
   "discord_token": "YOUR_DISCORD_BOT_TOKEN",
   "openai_api_key": "YOUR_OPENAI_API_KEY",
-  "allowed_channel_id": 1370102717502066779
+  "allowed_channel_id": YOUR_CHANNEL_ID
 }
 ```
 
