@@ -1,49 +1,64 @@
-# Veilingmeester Discord Bot
+🧠 Discord Auction Bot
 
+WARNING ⚠️THIS BOT WAS 100% VIBECODED USING GPT-4.0. I HAVE NOT TYPED A SINGLE CHARACTER.
 
-# WARNING - THIS BOT WAS 100% VIBECODED USING GPT4.0. I HAVE NOT TYPED A SINGLE CHARACTER. 
+A Discord bot for parsing, summarizing, and presenting auction listings from:
 
+🔹 OnlineVeilingmeester.nl
 
+🔹 Domeinenrz.nl
 
+All content is dynamically scraped or fetched from REST APIs, run through GPT-4o for summaries, and beautifully formatted into Discord embeds — complete with image grids and cost breakdowns.
 
-Deze bot verwerkt automatisch veilinglinks van:
+✨ Features
 
-* [OnlineVeilingmeester.nl](https://www.onlineveilingmeester.nl/)
-* [Domeinenrz.nl](https://verkoop.domeinenrz.nl)
+🔗 Auto-detects auction links in chat
 
-Bij het plaatsen van een link in een Discord-kanaal, genereert de bot automatisch een embed met:
+🧠 AI-powered summaries via GPT-4o
 
-* Titel, sluitingsdatum, huidige bod, kosten en BTW
-* Afbeeldingen in een nette 3x3 preview grid (1200×1200 px met zwarte rand)
-* 🧠 **AI-samenvatting** van het object via OpenAI `gpt-4o`
-* 📄 Volledige omschrijving (originele tekst van de aanbieder)
+🖼️ Image grid previews of listings
 
-## Vereisten
+💸 Cost calculations including fees & VAT
 
-Python 3.10+
+🔒 Only replies in specific channel (configurable)
 
-Installeer dependencies:
+🚫 Skibidi protection built-in
 
-```bash
+🛠️ Setup
+
+1. Clone the repo
+
+git clone https://github.com/yourname/discord-auction-bot.git
+cd discord-auction-bot
+
+2. Install dependencies
+
 pip install -r requirements.txt
-```
 
-## Secrets
+3. Create config.json
 
-Plaats je OpenAI- en Discord-token, en kanaal waar de bot in moet reageren in config.json
+{
+  "discord_token": "YOUR_DISCORD_BOT_TOKEN",
+  "openai_api_key": "YOUR_OPENAI_API_KEY",
+  "allowed_channel_id": 1370102717502066779
+}
 
+4. Run the bot
 
-## Starten
-
-```bash
 python bot.py
-```
 
-De bot luistert automatisch op nieuwe berichten met veilinglinks.
+📸 Example Output
 
-## Features
+(screenshot or sample embed message)
 
-* ✅ Ondersteuning voor OVM + DomeinenRZ
-* ✅ Inline AI-samenvatting in het Nederlands (gpt-4o)
-* ✅ Afbeeldingsgrid met 1px zwarte borders
-* ✅ Netto veilingprijsberekening incl. 17% kosten en 21% btw
+⚠️ Legal
+
+This project scrapes and summarizes publicly available information. Use responsibly.
+
+🙏 Attribution
+
+Generated entirely by ChatGPT (GPT-4.0) — yes, entirely. I didn’t type a single line. All prompts, code, error fixing, and README generation were done through vibes and GPT-4.
+
+🚀 Enjoy the bot, and may your bids be ever in your favor.
+
+💡 For improvements, just prompt again.
