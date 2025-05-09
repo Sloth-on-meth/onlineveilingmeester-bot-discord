@@ -41,7 +41,7 @@ async def on_message(message):
     if message.content.startswith("!purge"):
         parts = message.content.split()
         if len(parts) != 2 or not parts[1].isdigit():
-            await message.channel.send("Gebruik: `!skibidipurge <aantal>` (max 100)")
+            await message.channel.send("Gebruik: `!purge <aantal>` (max 100)")
             return
 
         amount = int(parts[1])
