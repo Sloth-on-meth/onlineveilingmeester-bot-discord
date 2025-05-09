@@ -60,7 +60,7 @@ python bot.py
 
 ## 📸 Example Output
 
-> (screenshot or sample embed message)
+![image](https://github.com/user-attachments/assets/c47911ae-9bdf-47d9-a072-701c6299fdb5)
 
 ---
 
