@@ -231,9 +231,11 @@ def strip_html(html: str) -> str:
     return re.sub(r'\n+', '\n', html).strip()
 
 async def compose_image_grid(urls: list[str]):
-    TILE_SIZE = 400
-    GRID_SIZE = 3
-    CANVAS_SIZE = TILE_SIZE * GRID_SIZE
+    from PIL import ImageOps
+
+    CANVAS_SIZE = 1200
+    MAX_IMAGES = 9
+    urls = urls[:MAX_IMAGES]
 
     async def fetch(session, url):
         try:
@@ -245,25 +247,34 @@ async def compose_image_grid(urls: list[str]):
         return None
 
     async with aiohttp.ClientSession() as session:
-        images = await asyncio.gather(*(fetch(session, url) for url in urls[:9]))
+        images = await asyncio.gather(*(fetch(session, url) for url in urls))
 
-    images = [img.resize((TILE_SIZE, TILE_SIZE)) for img in images if img]
+    images = [img for img in images if img]
     if not images:
         return None
 
-    grid = Image.new("RGB", (CANVAS_SIZE, CANVAS_SIZE), (255, 255, 255))
-    draw = ImageDraw.Draw(grid)
+    count = len(images)
+    cols = 2 if count <= 4 else 3
+    rows = (count + cols - 1) // cols
 
-    for i, img in enumerate(images):
-        x = (i % GRID_SIZE) * TILE_SIZE
-        y = (i // GRID_SIZE) * TILE_SIZE
-        grid.paste(img, (x, y))
-        draw.rectangle([x, y, x + TILE_SIZE - 1, y + TILE_SIZE - 1], outline="black", width=1)
+    tile_width = CANVAS_SIZE // cols
+    tile_height = CANVAS_SIZE // rows
+
+    grid = Image.new("RGB", (CANVAS_SIZE, CANVAS_SIZE), (255, 255, 255))
+
+    for idx, img in enumerate(images):
+        img.thumbnail((tile_width, tile_height), Image.LANCZOS)
+        padded = ImageOps.pad(img, (tile_width, tile_height), color=(255, 255, 255), centering=(0.5, 0.5))
+        x = (idx % cols) * tile_width
+        y = (idx // cols) * tile_height
+        grid.paste(padded, (x, y))
 
     output = BytesIO()
     grid.save(output, format="PNG")
     output.seek(0)
     return output
+
+
 
 async def genereer_samenvatting(titel, beschrijving, fotos, bod, btw, totaal, sluiting, categorie, staat, verzendbaar, bouwjaar, merk, startbod, topbieders):
     topbieders_str = "\n".join([f"{b.get('bieder', '?')}: € {b.get('bedrag', '?')},-" for b in topbieders]) or "Geen bieders"
