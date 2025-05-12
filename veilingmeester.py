@@ -21,6 +21,7 @@ openai.api_key = config["openai_api_key"]
 TOKEN = config["discord_token"]
 ALLOWED_CHANNEL_ID = config["allowed_channel_id"]
 UPDATES_CHANNEL_ID = config["updates_channel_id"]
+ALLOWED_ROLE_ID = config["allowed_role"]
 
 LOGFILE = "veilingmeester_log.txt"
 DBFILE = "veilingmeester.db"
@@ -85,6 +86,16 @@ async def on_message(message):
     if message.author.bot:
         return
 
+    if "skibidi" in message.content.lower():
+        await message.reply('toilet https://www.youtube.com/watch?v=WePNs-G7puA')
+        await message.add_reaction("🚽")
+        return
+
+    if message.guild:
+        role_ids = [r.id for r in message.author.roles]
+        if ALLOWED_ROLE_ID not in role_ids:
+            return
+
     if message.content.startswith("!purge"):
         parts = message.content.split()
         if len(parts) != 2 or not parts[1].isdigit():
@@ -99,9 +110,10 @@ async def on_message(message):
         deleted = await message.channel.purge(limit=amount + 1)
         confirm = await message.channel.send(f"🧻 Skibidi-purge uitgevoerd: {len(deleted)-1} berichten verwijderd.")
         await confirm.delete(delay=3)
-    if "skibidi" in message.content.lower():
-        await message.reply('toilet https://www.youtube.com/watch?v=WePNs-G7puA')
-        await message.add_reaction("🚽")
+        return
+
+    if message.content.startswith("!testbid"):
+        await simulate_bid_notification(message)
         return
 
     if message.channel.id != ALLOWED_CHANNEL_ID:
@@ -125,6 +137,7 @@ async def check_auction_updates():
     c = conn.cursor()
     c.execute("SELECT DISTINCT auction_id, lot_id, last_bid FROM tracked_auctions")
     tracked = c.fetchall()
+
     for auction_id, lot_id, last_bid in tracked:
         url = f"https://www.onlineveilingmeester.nl/rest/nl/v2/veilingen/{auction_id}/kavels/{lot_id}"
         async with aiohttp.ClientSession() as session:
@@ -132,23 +145,82 @@ async def check_auction_updates():
                 if resp.status != 200:
                     continue
                 data = await resp.json()
+
         new_bid = float(data.get("hoogsteBod") or data.get("openingsBod") or 0)
         if new_bid > last_bid:
             c.execute("SELECT user_id FROM tracked_auctions WHERE auction_id=? AND lot_id=?", (auction_id, lot_id))
             users = c.fetchall()
             mentions = " ".join([f"<@{user[0]}>" for user in users])
-            embed = discord.Embed(title="Nieuw bod geplaatst! @here",
-                                  url=f"https://www.onlineveilingmeester.nl/nl/veilingen/{auction_id}/kavels/{lot_id}",
-                                  description=f"Nieuw bod: € {new_bid:.2f}",
-                                  color=discord.Color.green())
+
+            # Extract data
+            title = data.get("kavelData", {}).get("naam", "Kavel")
+            image = data.get("imageList", [None])[0]
+            veilingkosten = round(new_bid * (data.get("opgeldPercentage", 17) / 100), 2)
+            handelingskosten = float(data.get("handelingskosten", 0) or 0)
+            kosten_totaal = veilingkosten + handelingskosten
+            btw = round((new_bid + kosten_totaal) * (data.get("btwPercentage", 21) / 100), 2)
+            totaal = round(new_bid + kosten_totaal + btw, 2)
+            aantal_biedingen = data.get("aantalBiedingen", "?")
+            sluiting_raw = data.get("sluitingsDatumISO")
+            try:
+                sluiting = datetime.fromisoformat(sluiting_raw.replace("Z", "+00:00"))
+                now = datetime.now(timezone.utc)
+                delta = sluiting - now
+                sluit_over = humanize.naturaldelta(delta) if delta.total_seconds() > 0 else "Gesloten"
+            except:
+                sluit_over = "Onbekend"
+
+            # Embed opbouwen
+            embed = discord.Embed(
+                title="Nieuw bod geplaatst!",
+                url=f"https://www.onlineveilingmeester.nl/nl/veilingen/{auction_id}/kavels/{lot_id}",
+                description=f"**{title}**\n\n💰 Nieuw bod: € {new_bid:.2f}\n💸 Totaal incl. kosten: € {totaal:.2f}",
+                color=discord.Color.green()
+            )
+            if image:
+                embed.set_image(url=f"https://www.onlineveilingmeester.nl/images/800x600/{image}")
+
+            embed.add_field(name="💶 Bod", value=f"€ {new_bid:.2f}", inline=True)
+            embed.add_field(name="📦 Veilingkosten", value=f"€ {veilingkosten:.2f}", inline=True)
+            embed.add_field(name="🧾 Handelingskosten", value=f"€ {handelingskosten:.2f}", inline=True)
+            embed.add_field(name="🧾 BTW", value=f"€ {btw:.2f}", inline=True)
+            embed.add_field(name="💳 Totaal", value=f"€ {totaal:.2f}", inline=True)
+            embed.add_field(name="📈 Aantal biedingen", value=str(aantal_biedingen), inline=True)
+            embed.add_field(name="⏳ Sluit over", value=sluit_over, inline=True)
+
+            # Verzenden
             channel = bot.get_channel(UPDATES_CHANNEL_ID)
             await channel.send(content=mentions, embed=embed)
+
+            log(f"📢 Nieuw bod voor kavel {lot_id} in veiling {auction_id}: €{new_bid:.2f}, totaal €{totaal:.2f}, biedingen: {aantal_biedingen}, sluit over: {sluit_over}")
+
+            # DB bijwerken
             c.execute("UPDATE tracked_auctions SET last_bid=? WHERE auction_id=? AND lot_id=?",
                       (new_bid, auction_id, lot_id))
             conn.commit()
+
     conn.close()
 
-# The rest of the functions like handle_ovm, compose_image_grid, strip_html, genereer_samenvatting should be added below as per the base implementation you provided
+
+
+async def simulate_bid_notification(message):
+    auction_id = "1234"
+    lot_id = "5678"
+    new_bid = 123.45
+    title = "Test Kavel"
+    image = "https://via.placeholder.com/800x600.png?text=Preview"
+
+    embed = discord.Embed(title="Nieuw bod geplaatst! @here",
+                          url=f"https://www.onlineveilingmeester.nl/nl/veilingen/{auction_id}/kavels/{lot_id}",
+                          description=f"Nieuw bod: € {new_bid:.2f}",
+                          color=discord.Color.green())
+    embed.set_image(url=image)
+    embed.add_field(name="Titel", value=title, inline=False)
+    embed.add_field(name="Bod", value=f"€ {new_bid:.2f}", inline=True)
+
+    await message.channel.send(content=f"<@{message.author.id}>", embed=embed)
+
+...
 async def handle_ovm(message, auction_id, lot_id, start):
     url = f"https://www.onlineveilingmeester.nl/rest/nl/v2/veilingen/{auction_id}/kavels/{lot_id}"
     log(f"OVM-data ophalen van {url}")
