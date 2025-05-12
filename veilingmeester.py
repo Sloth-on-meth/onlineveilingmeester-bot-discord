@@ -3,8 +3,10 @@ import discord
 import aiohttp
 import asyncio
 import json
-from discord.ext import commands
-from PIL import Image, ImageDraw
+import sqlite3
+from discord.ext import commands, tasks
+from discord.ui import Button, View
+from PIL import Image, ImageDraw, ImageOps
 from io import BytesIO
 from datetime import datetime, timezone
 import humanize
@@ -18,8 +20,24 @@ with open("config.json") as f:
 openai.api_key = config["openai_api_key"]
 TOKEN = config["discord_token"]
 ALLOWED_CHANNEL_ID = config["allowed_channel_id"]
+UPDATES_CHANNEL_ID = config["updates_channel_id"]
 
 LOGFILE = "veilingmeester_log.txt"
+DBFILE = "veilingmeester.db"
+
+# Database setup
+conn = sqlite3.connect(DBFILE)
+c = conn.cursor()
+c.execute("""
+CREATE TABLE IF NOT EXISTS tracked_auctions (
+    auction_id TEXT,
+    lot_id TEXT,
+    last_bid REAL,
+    user_id TEXT
+)
+""")
+conn.commit()
+conn.close()
 
 def log(message: str):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -33,11 +51,40 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 @bot.event
 async def on_ready():
     log(f"Aangemeld als {bot.user}")
+    check_auction_updates.start()
+
+class FollowView(View):
+    def __init__(self, auction_id, lot_id, bid_amount):
+        super().__init__(timeout=None)
+        self.auction_id = auction_id
+        self.lot_id = lot_id
+        self.bid_amount = bid_amount
+
+    @discord.ui.button(label="🔨 Volg", style=discord.ButtonStyle.success)
+    async def follow_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        conn = sqlite3.connect(DBFILE)
+        c = conn.cursor()
+        c.execute("INSERT INTO tracked_auctions (auction_id, lot_id, last_bid, user_id) VALUES (?, ?, ?, ?)",
+                  (self.auction_id, self.lot_id, self.bid_amount, str(interaction.user.id)))
+        conn.commit()
+        conn.close()
+        await interaction.response.send_message("Je volgt dit kavel nu.", ephemeral=True)
+
+    @discord.ui.button(label="❌ Stop Volgen", style=discord.ButtonStyle.danger)
+    async def unfollow_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        conn = sqlite3.connect(DBFILE)
+        c = conn.cursor()
+        c.execute("DELETE FROM tracked_auctions WHERE auction_id=? AND lot_id=? AND user_id=?",
+                  (self.auction_id, self.lot_id, str(interaction.user.id)))
+        conn.commit()
+        conn.close()
+        await interaction.response.send_message("Je volgt dit kavel niet meer.", ephemeral=True)
 
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
+
     if message.content.startswith("!purge"):
         parts = message.content.split()
         if len(parts) != 2 or not parts[1].isdigit():
@@ -66,14 +113,42 @@ async def on_message(message):
     try:
         if match := re.search(r'onlineveilingmeester\.nl/(?:nl/veilingen|en/auctions)/(\d+)/(?:kavels|lots)/(\d+)', message.content):
             await handle_ovm(message, match.group(1), match.group(2), start)
-        elif match := re.search(r'verkoop\.domeinenrz\.nl/[^ ]*?meerfotos=(K\d+)', message.content):
-            await handle_drz(message, match.group(1), start)
         else:
             await bot.process_commands(message)
     except Exception as e:
         log(f"❌ Onverwerkte fout: {e}")
         await message.reply("⚠️ Er ging iets mis bij het verwerken van je bericht.")
 
+@tasks.loop(minutes=5)
+async def check_auction_updates():
+    conn = sqlite3.connect(DBFILE)
+    c = conn.cursor()
+    c.execute("SELECT DISTINCT auction_id, lot_id, last_bid FROM tracked_auctions")
+    tracked = c.fetchall()
+    for auction_id, lot_id, last_bid in tracked:
+        url = f"https://www.onlineveilingmeester.nl/rest/nl/v2/veilingen/{auction_id}/kavels/{lot_id}"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    continue
+                data = await resp.json()
+        new_bid = float(data.get("hoogsteBod") or data.get("openingsBod") or 0)
+        if new_bid > last_bid:
+            c.execute("SELECT user_id FROM tracked_auctions WHERE auction_id=? AND lot_id=?", (auction_id, lot_id))
+            users = c.fetchall()
+            mentions = " ".join([f"<@{user[0]}>" for user in users])
+            embed = discord.Embed(title="Nieuw bod geplaatst!",
+                                  url=f"https://www.onlineveilingmeester.nl/nl/veilingen/{auction_id}/kavels/{lot_id}",
+                                  description=f"Nieuw bod: € {new_bid:.2f}",
+                                  color=discord.Color.green())
+            channel = bot.get_channel(UPDATES_CHANNEL_ID)
+            await channel.send(content=mentions, embed=embed)
+            c.execute("UPDATE tracked_auctions SET last_bid=? WHERE auction_id=? AND lot_id=?",
+                      (new_bid, auction_id, lot_id))
+            conn.commit()
+    conn.close()
+
+# The rest of the functions like handle_ovm, compose_image_grid, strip_html, genereer_samenvatting should be added below as per the base implementation you provided
 async def handle_ovm(message, auction_id, lot_id, start):
     url = f"https://www.onlineveilingmeester.nl/rest/nl/v2/veilingen/{auction_id}/kavels/{lot_id}"
     log(f"OVM-data ophalen van {url}")
@@ -154,12 +229,15 @@ async def handle_ovm(message, auction_id, lot_id, start):
         embed.add_field(name="👑 Topbieders", value=top_bids, inline=False)
         embed.add_field(name="⏱️ Verwerkingstijd", value=f"{(datetime.now() - start).total_seconds():.2f}s", inline=False)
 
+        view = FollowView(auction_id, lot_id, bod)
+        
         if image_urls and (grid := await compose_image_grid(image_urls)):
             file = discord.File(grid, filename="preview.png")
             embed.set_image(url="attachment://preview.png")
-            await message.reply(embed=embed, file=file)
+            await message.reply(embed=embed, file=file, view=view)
         else:
-            await message.reply(embed=embed)
+            await message.reply(embed=embed, view=view)
+
 
     except Exception as e:
         log(f"❌ OVM-fout: {e}")
@@ -309,4 +387,5 @@ async def genereer_samenvatting(titel, beschrijving, fotos, bod, btw, totaal, sl
         return "Samenvatting kon niet worden gegenereerd."
 
 # Start de bot
-bot.run(TOKEN)
+if __name__ == '__main__':
+    bot.run(TOKEN)
