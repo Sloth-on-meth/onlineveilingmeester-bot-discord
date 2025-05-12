@@ -137,7 +137,7 @@ async def check_auction_updates():
             c.execute("SELECT user_id FROM tracked_auctions WHERE auction_id=? AND lot_id=?", (auction_id, lot_id))
             users = c.fetchall()
             mentions = " ".join([f"<@{user[0]}>" for user in users])
-            embed = discord.Embed(title="Nieuw bod geplaatst!",
+            embed = discord.Embed(title="Nieuw bod geplaatst! @here",
                                   url=f"https://www.onlineveilingmeester.nl/nl/veilingen/{auction_id}/kavels/{lot_id}",
                                   description=f"Nieuw bod: € {new_bid:.2f}",
                                   color=discord.Color.green())
