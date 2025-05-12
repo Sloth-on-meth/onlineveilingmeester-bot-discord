@@ -49,19 +49,16 @@ async def on_message(message):
             await message.channel.send("Geef een getal tussen 1 en 100.")
             return
 
-        deleted = await message.channel.purge(limit=amount + 1)  # +1 om ook het commando zelf te verwijderen
+        deleted = await message.channel.purge(limit=amount + 1)
         confirm = await message.channel.send(f"🧻 Skibidi-purge uitgevoerd: {len(deleted)-1} berichten verwijderd.")
         await confirm.delete(delay=3)
     if "skibidi" in message.content.lower():
         await message.reply('toilet https://www.youtube.com/watch?v=WePNs-G7puA')
-        await message.add_reaction("🚽")  # Voeg hier de gewenste emoji toe
+        await message.add_reaction("🚽")
         return
 
-    
     if message.channel.id != ALLOWED_CHANNEL_ID:
         return
-
-
 
     start = datetime.now()
     log(f"Bericht ontvangen: {message.content}")
@@ -97,14 +94,12 @@ async def handle_ovm(message, auction_id, lot_id, start):
         now = datetime.now(timezone.utc)
         delta = sluiting - now
 
-        try:
-            bod = float(data.get("hoogsteBod") or data.get("openingsBod") or 0)
-            kosten = round(bod * 0.17, 2)
-            btw = round((bod + kosten) * 0.21, 2)
-            totaal = round(bod + kosten + btw, 2)
-        except Exception as e:
-            log(f"❌ Fout bij bodberekening: {e}")
-            bod = kosten = btw = totaal = 0.0
+        bod = float(data.get("hoogsteBod") or data.get("openingsBod") or 0)
+        veilingkosten = round(bod * (data.get("opgeldPercentage", 17) / 100), 2)
+        handelingskosten = float(data.get("handelingskosten", 0) or 0)
+        kosten_totaal = veilingkosten + handelingskosten
+        btw = round((bod + kosten_totaal) * (data.get("btwPercentage", 21) / 100), 2)
+        totaal = round(bod + kosten_totaal + btw, 2)
 
         topbieders = data.get("biedingen", [])[:3]
         samenvatting = await genereer_samenvatting(
@@ -131,19 +126,19 @@ async def handle_ovm(message, auction_id, lot_id, start):
             url=f"https://www.onlineveilingmeester.nl/nl/veilingen/{auction_id}/kavels/{lot_id}"
         )
         embed.add_field(name="🧠 AI Samenvatting", value=samenvatting, inline=False)
-
         embed.add_field(name="📋 Details", value="\n".join([
             f"💰 **Huidig bod:** € {bod:.2f},-",
             f"📈 **Startbod:** € {data.get('openingsBod', '??')},-",
             f"🔨 **Aantal biedingen:** {data.get('aantalBiedingen', '?')}",
             f"⏳ **Sluit over:** {'Gesloten' if delta.total_seconds() <= 0 else humanize.naturaldelta(delta)}",
-            f"📅 **Sluit op:** {sluiting.strftime('%d/%m/%Y %H:%M')}"
+            f"🗓 **Sluit op:** {sluiting.strftime('%d/%m/%Y %H:%M')}"
         ]), inline=False)
 
         embed.add_field(name="💸 Kostenoverzicht", value="\n".join([
             f"💰 Bod: € {bod:.2f}",
-            f"🧾 Veilingkosten (17%): € {kosten:.2f}",
-            f"🧾 BTW (21%): € {btw:.2f}",
+            f"🧾 Veilingkosten ({data.get('opgeldPercentage', 17)}%): € {veilingkosten:.2f}",
+            f"📦 Handelingskosten: € {handelingskosten:.2f}",
+            f"🧾 BTW ({data.get('btwPercentage', 21)}%): € {btw:.2f}",
             f"💳 **Totaal te betalen:** € {totaal:.2f}"
         ]), inline=False)
 
@@ -157,7 +152,6 @@ async def handle_ovm(message, auction_id, lot_id, start):
 
         top_bids = "\n".join([f"**{b.get('bieder', '?')}**: € {b.get('bedrag', '?')},-" for b in topbieders]) or "Nog geen biedingen."
         embed.add_field(name="👑 Topbieders", value=top_bids, inline=False)
-
         embed.add_field(name="⏱️ Verwerkingstijd", value=f"{(datetime.now() - start).total_seconds():.2f}s", inline=False)
 
         if image_urls and (grid := await compose_image_grid(image_urls)):
