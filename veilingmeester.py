@@ -35,7 +35,7 @@ class BotConfig(BaseModel):
     allowed_role_id: int
     db_file: str = "veilingmeester.db"
     log_file: str = "veilingmeester.log"
-    check_interval: int = 5  # minutes
+    check_interval: int = 1 # minutes
     max_log_size: int = 5  # MB
     log_backup_count: int = 3
     max_concurrent_images: int = 5
