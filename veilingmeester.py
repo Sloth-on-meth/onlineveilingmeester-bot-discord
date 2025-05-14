@@ -20,6 +20,7 @@ import openai
 from functools import wraps
 import time
 import html
+from openai import AsyncOpenAI
 
 # --------------------------
 # Configuration Setup
@@ -51,6 +52,7 @@ try:
 except Exception as e:
     print(f"CRITICAL: Failed to load config: {e}")
     raise
+client = AsyncOpenAI(api_key=config.openai_api_key)
 
 # --------------------------
 # Logging Setup
@@ -139,7 +141,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # --------------------------
 
 def track_performance(func):
-    """Decorator to log function execution time"""
+    """Logs duration and returns result with execution time"""
     @wraps(func)
     async def wrapper(*args, **kwargs):
         start = time.perf_counter()
@@ -147,12 +149,14 @@ def track_performance(func):
             result = await func(*args, **kwargs)
             duration = time.perf_counter() - start
             logger.info(f"{func.__name__} executed in {duration:.2f}s")
-            return result
+            return result, duration
         except Exception as e:
             duration = time.perf_counter() - start
             logger.error(f"{func.__name__} failed after {duration:.2f}s: {e}", exc_info=True)
             raise
     return wrapper
+
+
 
 def sanitize_input(text: str) -> str:
     """Sanitize user input to prevent injection"""
@@ -169,9 +173,6 @@ def strip_html(html_text: str) -> str:
 
 async def send_to_log_channel(message: str, level: str = "info"):
     """Send log message to Discord log channel"""
-    if not hasattr(bot, 'updates_channel'):
-        return
-    
     try:
         color = discord.Color.green() if level == "info" else discord.Color.red()
         embed = discord.Embed(
@@ -179,7 +180,13 @@ async def send_to_log_channel(message: str, level: str = "info"):
             color=color
         )
         embed.set_footer(text=f"Log Level: {level.upper()}")
-        await bot.updates_channel.send(embed=embed)
+
+        log_channel = bot.get_channel(config.log_channel_id)
+        if log_channel:
+            await log_channel.send(embed=embed)
+        else:
+            logger.warning("Log channel not found")
+
     except Exception as e:
         logger.error(f"Failed to send to log channel: {e}", exc_info=True)
 
@@ -266,16 +273,20 @@ async def generate_summary(**kwargs) -> str:
     )
 
     try:
-        response = await openai.ChatCompletion.acreate(
+        client = openai.AsyncOpenAI(api_key=config.openai_api_key)
+
+        response = await client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=100,
             temperature=0.7
         )
+
         return response.choices[0].message.content.strip()
     except Exception as e:
         logger.error(f"OpenAI error: {e}", exc_info=True)
         return "⚠️ Kon geen samenvatting genereren wegens een fout."
+
 
 # --------------------------
 # Discord Views
@@ -342,6 +353,7 @@ class AuctionData(BaseModel):
     isShippable: bool = False
 
 @track_performance
+
 async def handle_ovm(message: discord.Message, auction_id: str, lot_id: str, start_time: datetime):
     """Handle OVM auction links"""
     url = f"https://www.onlineveilingmeester.nl/rest/nl/v2/veilingen/{auction_id}/kavels/{lot_id}"
@@ -375,6 +387,8 @@ async def handle_ovm(message: discord.Message, auction_id: str, lot_id: str, sta
         except Exception as e:
             logger.warning(f"Error parsing closing date: {e}")
             sluit_over = "Onbekend"
+        grid_duration = 0.0
+        summary_duration = 0.0
 
         bod = float(data.hoogsteBod or data.openingsBod or 0)
         veilingkosten = round(bod * (data.opgeldPercentage / 100), 2)
@@ -387,7 +401,7 @@ async def handle_ovm(message: discord.Message, auction_id: str, lot_id: str, sta
         topbieders_str = "\n".join([f"{b.get('bieder', '?')}: € {b.get('bedrag', '?')},-" for b in topbieders]) or "Geen bieders"
 
         # Generate AI summary
-        samenvatting = await generate_summary(
+        samenvatting, summary_duration = await generate_summary(
             titel=title,
             beschrijving=description,
             fotos=image_urls,
@@ -441,13 +455,24 @@ async def handle_ovm(message: discord.Message, auction_id: str, lot_id: str, sta
 
         embed.add_field(name="👑 Topbieders", value=topbieders_str, inline=False)
         embed.add_field(name="⏱️ Verwerkingstijd", value=f"{(datetime.now() - start_time).total_seconds():.2f}s", inline=False)
+        embed.add_field(
+            name="🕒 Verwerktijden",
+            value="\n".join([
+                f"🧠 AI: {summary_duration:.2f}s",
+                f"🖼️ Afbeeldingen: {grid_duration:.2f}s",
+                f"📦 Totaal: {(datetime.now() - start_time).total_seconds():.2f}s"
+            ]),
+            inline=False
+        )
 
         view = FollowView(auction_id, lot_id, bod)
         
         # Handle images
+
+
         if image_urls:
             try:
-                grid = await compose_image_grid(image_urls)
+                grid, grid_duration = await compose_image_grid(image_urls)
                 if grid:
                     file = discord.File(grid, filename="preview.png")
                     embed.set_image(url="attachment://preview.png")
@@ -545,6 +570,7 @@ async def check_auction_updates():
                         embed.add_field(name="💳 Totaal", value=f"€ {totaal:.2f}", inline=True)
                         embed.add_field(name="📈 Aantal biedingen", value=str(data.aantalBiedingen), inline=True)
                         embed.add_field(name="⏳ Sluit over", value=sluit_over, inline=True)
+
 
                         # Send notification
                         try:
