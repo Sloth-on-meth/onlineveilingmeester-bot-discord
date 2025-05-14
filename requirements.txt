@@ -1,6 +1,8 @@
-discord.py
-aiohttp>
-beautifulsoup4
-pillow
-openai==0.28
-humanize
+aiohttp>=3.9.3
+discord.py>=2.3.2
+openai>=1.14.3
+pillow>=10.2.0
+python-dotenv>=1.0.1
+pydantic>=2.7.1
+humanize>=4.9.0
+beautifulsoup4>=4.12.3
