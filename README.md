@@ -9,7 +9,7 @@
 
 ---
 
-A Discord bot that watches for auction links, fetches relevant data from APIs or scraped pages, summarizes them using GPT-4o, and drops detailed embeds with costs, timers, and image grids.
+A Discord bot that watches for auction links, fetches relevant data from APIs or scraped pages, summarizes them using GPT-4o, and drops detailed embeds with cost breakdowns, live countdowns, and image grids. It also supports bid tracking with real-time ping notifications.
 
 ---
 
@@ -17,20 +17,22 @@ A Discord bot that watches for auction links, fetches relevant data from APIs or
 
 - 🔹 **OnlineVeilingmeester.nl**
 - 🔹 **Domeinenrz.nl**
+- 🟡 *(Marktplaats support planned)*
 
 ---
 
 ## ✨ Features
 
-- 🔗 **Auto-parses auction links in chat**
-- 🧠 **AI-generated summaries via GPT-4o**
-- 🖼️ **Image grid previews** (maintains aspect ratios)
-- 💸 **Automatic cost breakdown** (bid + fees + VAT)
-- 🗓️ **Live countdown until closing time**
-- ✅ **Follow/Unfollow buttons per auction**
-- 🔔 **Bid tracking with user pinging**
-- 🔐 **Channel-restricted replies**
-- 🚽 **Built-in skibidi protection**
+- 🔗 **Auto-parses auction links in chat** (no slash commands)
+- 🧠 **GPT-4o summaries** — concise descriptions in natural Dutch
+- 🖼️ **Image grid previews** — maintains aspect ratio, max 9 images
+- 💸 **Cost breakdowns** — bid, fees, VAT, total
+- ⏳ **Closing time + countdown** — always in human-friendly format
+- 🔘 **Follow/Unfollow buttons** — users can opt-in to ping alerts
+- 🔔 **Bid tracking** — every 5 minutes the bot checks for updates
+- 👥 **Per-user mentions** — no global spam
+- 📤 **Logs sent to Discord** — errors and info go to your logchannel
+- 🚽 **Skibidi filter** — meme auto-response with reaction
 
 ---
 
@@ -42,34 +44,75 @@ git clone https://github.com/yourname/discord-auction-bot.git
 cd discord-auction-bot
 ```
 
-### 2. install depedencies
-```
+### 2. Install dependencies
+```bash
 pip install -r requirements.txt
 ```
 
-### 3. configure your config.json
-```
+### 3. Configure `config.json`
+```json
 {
   "discord_token": "YOUR_DISCORD_BOT_TOKEN",
   "openai_api_key": "YOUR_OPENAI_API_KEY",
-  "allowed_channel_id": YOUR_CHANNEL_ID,
-  "updates_channel_id": YOUR_UPDATES_CHANNEL_ID,
-  "logchannel": YOUR_LOG_CHANNEL_ID
+  "allowed_channel_id": 1234567890,
+  "updates_channel_id": 1234567890,
+  "log_channel_id": 1234567890,
+  "allowed_role_id": 1234567890
 }
 ```
-### 4. run the bot
-```
+
+### 4. Run the bot
+```bash
 python3 veilingmeester.py
 ```
 
+---
 
+## 🔨 Bid Tracking
 
-### bid tracking
-Click the 🔨 "Volg" button on any auction embed to follow it.
-If a new bid comes in, you’ll get pinged in the updates channel.
-Click ❌ "Stop Volgen" to unfollow.
+Click the 🔨 **"Volg"** button on any auction embed to follow it.  
+If a new bid is placed, you’ll get pinged in the **updates channel**.  
+Click ❌ **"Stop Volgen"** to unfollow.  
+Updates run every 5 minutes.
 
+---
 
-### 📸 Example Output
+## 📸 Example Output
+
 ![embed-example](https://github.com/user-attachments/assets/c47911ae-9bdf-47d9-a072-701c6299fdb5)
 
+---
+
+## ⏱️ Performance Logs
+
+Each summary is timed and displayed inside the embed:
+```
+🧠 AI: 5.98s  
+🖼️ Image grid: 0.99s  
+📦 Total: 8.18s  
+```
+All durations are logged to both file and Discord log channel.
+
+---
+
+## 🧪 Debug Tools
+
+- `!testbid` — simulate a bid notification
+- `!purge 10` — delete last 10 messages (admin-only)
+
+---
+
+## ❗ License & Disclaimer
+
+- MIT licensed.
+- This bot scrapes public pages and uses official APIs where available.
+- Use responsibly. Not affiliated with any auction platform.
+
+---
+
+## 💡 Need More?
+
+Want to add more sites? Get summaries in English? Integrate with webhooks?  
+Fork it. Hack it. Or just vibe harder.
+
+```
