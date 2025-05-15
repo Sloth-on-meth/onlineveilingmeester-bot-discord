@@ -285,7 +285,7 @@ async def generate_summary(**kwargs) -> str:
         client = openai.AsyncOpenAI(api_key=config.openai_api_key)
 
         response = await client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=400,
             temperature=0.7
@@ -375,19 +375,15 @@ async def handle_ovm(message: discord.Message, auction_id: str, lot_id: str, sta
                     logger.warning(f"OVM API returned {resp.status} for {url}")
                     await message.reply("❌ Kan veilinggegevens niet ophalen (API fout).")
                     return
-                
-                try:
-                    data = AuctionData(**await resp.json())
-                except Exception as e:
-                    logger.error(f"Invalid OVM API response: {e}", exc_info=True)
-                    await message.reply("⚠️ Ongeldige gegevens ontvangen van veilingplatform.")
-                    return
+                data = AuctionData(**await resp.json())
 
+        # Prepare item data
         item = data.kavelData
         title = item.get("naam", "(Geen titel)")
         description = strip_html(item.get("specificaties") or item.get("bijzonderheden") or item.get("product") or "Geen beschrijving.")
         image_urls = [f"https://www.onlineveilingmeester.nl/images/800x600/{path}" for path in data.imageList]
-        
+
+        # Calculate timings
         try:
             sluiting = datetime.fromisoformat(data.sluitingsDatumISO.replace("Z", "+00:00"))
             now = datetime.now(timezone.utc)
@@ -396,8 +392,6 @@ async def handle_ovm(message: discord.Message, auction_id: str, lot_id: str, sta
         except Exception as e:
             logger.warning(f"Error parsing closing date: {e}")
             sluit_over = "Onbekend"
-        grid_duration = 0.0
-        summary_duration = 0.0
 
         bod = float(data.hoogsteBod or data.openingsBod or 0)
         veilingkosten = round(bod * (data.opgeldPercentage / 100), 2)
@@ -406,26 +400,32 @@ async def handle_ovm(message: discord.Message, auction_id: str, lot_id: str, sta
         btw = round((bod + kosten_totaal) * (data.btwPercentage / 100), 2)
         totaal = round(bod + kosten_totaal + btw, 2)
 
-        topbieders = data.biedingen[:3]
-        topbieders_str = "\n".join([f"{b.get('bieder', '?')}: € {b.get('bedrag', '?')},-" for b in topbieders]) or "Geen bieders"
+        topbieders_str = "\n".join([
+            f"{b.get('bieder', '?')}: € {b.get('bedrag', '?')},-" for b in data.biedingen[:3]
+        ]) or "Geen bieders"
 
-        # Generate AI summary
-        samenvatting, summary_duration = await generate_summary(
-            titel=title,
-            beschrijving=description,
-            fotos=image_urls,
-            bod=bod,
-            btw=btw,
-            totaal=totaal,
-            sluiting=sluiting.strftime('%d/%m/%Y %H:%M'),
-            categorie=data.categorie.get("naam", "Onbekend"),
-            staat=item.get("conditie", "Onbekend"),
-            verzendbaar="Ja" if data.isShippable else "Nee",
-            bouwjaar=item.get("bouwjaar", "Onbekend"),
-            merk=item.get("merk", "Onbekend"),
-            startbod=data.openingsBod or "Onbekend",
-            topbieders_str=topbieders_str
-        )
+        # Determine whether to generate an AI summary
+        skip_ai = "!noai" in message.content.lower()
+        if not skip_ai:
+            samenvatting, summary_duration = await generate_summary(
+                titel=title,
+                beschrijving=description,
+                fotos=image_urls,
+                bod=bod,
+                btw=btw,
+                totaal=totaal,
+                sluiting=sluiting.strftime('%d/%m/%Y %H:%M'),
+                categorie=data.categorie.get("naam", "Onbekend"),
+                staat=item.get("conditie", "Onbekend"),
+                verzendbaar="Ja" if data.isShippable else "Nee",
+                bouwjaar=item.get("bouwjaar", "Onbekend"),
+                merk=item.get("merk", "Onbekend"),
+                startbod=data.openingsBod or "Onbekend",
+                topbieders_str=topbieders_str
+            )
+        else:
+            samenvatting = None
+            summary_duration = 0.0
 
         # Build embed
         embed = discord.Embed(
@@ -434,10 +434,12 @@ async def handle_ovm(message: discord.Message, auction_id: str, lot_id: str, sta
             color=discord.Color.orange(),
             url=f"https://www.onlineveilingmeester.nl/nl/veilingen/{auction_id}/kavels/{lot_id}"
         )
-        
-        # Add fields to embed
-        embed.add_field(name="🧠 AI Samenvatting", value=samenvatting, inline=False)
-        
+
+        # Add AI summary field only if generated
+        if samenvatting:
+            embed.add_field(name="🧠 AI Samenvatting", value=samenvatting, inline=False)
+
+        # Add other details...
         embed.add_field(name="📋 Details", value="\n".join([
             f"💰 **Huidig bod:** € {bod:.2f},-",
             f"📈 **Startbod:** € {data.openingsBod or '??'},-",
@@ -464,6 +466,8 @@ async def handle_ovm(message: discord.Message, auction_id: str, lot_id: str, sta
 
         embed.add_field(name="👑 Topbieders", value=topbieders_str, inline=False)
         embed.add_field(name="⏱️ Verwerkingstijd", value=f"{(datetime.now() - start_time).total_seconds():.2f}s", inline=False)
+
+        view = FollowView(auction_id, lot_id, bod)
 
 
         view = FollowView(auction_id, lot_id, bod)
