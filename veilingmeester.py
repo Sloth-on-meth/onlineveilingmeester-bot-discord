@@ -149,7 +149,12 @@ def track_performance(func):
             result = await func(*args, **kwargs)
             duration = time.perf_counter() - start
             logger.info(f"{func.__name__} executed in {duration:.2f}s")
+            
+            # If the original function returned a tuple already, don't double-wrap it
+            if isinstance(result, tuple) and len(result) == 2 and isinstance(result[1], float):
+                return result  # assume it's already (result, duration)
             return result, duration
+
         except Exception as e:
             duration = time.perf_counter() - start
             logger.error(f"{func.__name__} failed after {duration:.2f}s: {e}", exc_info=True)
@@ -196,6 +201,8 @@ async def send_to_log_channel(message: str, level: str = "info"):
 
 @track_performance
 async def compose_image_grid(urls: List[str]) -> Optional[BytesIO]:
+    start_time = time.perf_counter()
+
     """Create a grid image from multiple URLs"""
     CANVAS_SIZE = 1200
     MAX_IMAGES = 9
@@ -245,7 +252,9 @@ async def compose_image_grid(urls: List[str]) -> Optional[BytesIO]:
     output = BytesIO()
     grid.save(output, format="PNG")
     output.seek(0)
-    return output
+
+    duration = time.perf_counter() - start_time  # manually time it
+    return output, duration
 
 # --------------------------
 # AI Summary Generation
@@ -278,7 +287,7 @@ async def generate_summary(**kwargs) -> str:
         response = await client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=100,
+            max_tokens=400,
             temperature=0.7
         )
 
@@ -455,6 +464,36 @@ async def handle_ovm(message: discord.Message, auction_id: str, lot_id: str, sta
 
         embed.add_field(name="👑 Topbieders", value=topbieders_str, inline=False)
         embed.add_field(name="⏱️ Verwerkingstijd", value=f"{(datetime.now() - start_time).total_seconds():.2f}s", inline=False)
+
+
+        view = FollowView(auction_id, lot_id, bod)
+        
+        # Handle images
+
+
+        if image_urls:
+            try:
+                grid_result = await compose_image_grid(image_urls)
+                print(f'grid result: {grid_result}')
+                grid, grid_duration = grid_result if isinstance(grid_result, tuple) else (grid_result, 0.0)
+                print(grid_duration)
+                if grid:
+                    file = discord.File(grid, filename="preview.png")
+                    embed.set_image(url="attachment://preview.png")
+                    embed.add_field(
+                        name="🕒 Verwerktijden",
+                        value="\n".join([
+                            f"🧠 AI: {summary_duration:.2f}s",
+                            f"🖼️ Afbeeldingen: {grid_duration:.2f}s",
+                            f"📦 Totaal: {(datetime.now() - start_time).total_seconds():.2f}s"
+                        ]),
+                        inline=False
+                    )
+                    await message.reply(embed=embed, file=file, view=view) 
+                    return
+
+            except Exception as e:
+                logger.error(f"Image processing error: {e}", exc_info=True)
         embed.add_field(
             name="🕒 Verwerktijden",
             value="\n".join([
@@ -464,24 +503,7 @@ async def handle_ovm(message: discord.Message, auction_id: str, lot_id: str, sta
             ]),
             inline=False
         )
-
-        view = FollowView(auction_id, lot_id, bod)
-        
-        # Handle images
-
-
-        if image_urls:
-            try:
-                grid, grid_duration = await compose_image_grid(image_urls)
-                if grid:
-                    file = discord.File(grid, filename="preview.png")
-                    embed.set_image(url="attachment://preview.png")
-                    await message.reply(embed=embed, file=file, view=view)
-                    return
-            except Exception as e:
-                logger.error(f"Image processing error: {e}", exc_info=True)
-
-        await message.reply(embed=embed, view=view)
+        await message.reply(embed=embed, view=view) 
 
     except Exception as e:
         logger.error(f"Error in handle_ovm: {e}", exc_info=True)
